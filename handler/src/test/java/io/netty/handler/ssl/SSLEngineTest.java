@@ -2894,13 +2894,13 @@ public abstract class SSLEngineTest {
                 .build());
 
         try {
-            doHandshake("a.netty.io", 9999);
+            doHandshake("a.netty.io", 9999, false);
             assertSessionCache(serverSslCtx.sessionContext(), 1);
             assertSessionCache(clientSslCtx.sessionContext(), 1);
-            doHandshake("a.netty.io", 9999);
+            doHandshake("a.netty.io", 9999, true);
             assertSessionCache(serverSslCtx.sessionContext(), 1);
             assertSessionCache(clientSslCtx.sessionContext(), 1);
-            doHandshake("b.netty.io", 9999);
+            doHandshake("b.netty.io", 9999, false);
             assertSessionCache(serverSslCtx.sessionContext(), 2);
             assertSessionCache(clientSslCtx.sessionContext(), 2);
         } finally {
@@ -2921,18 +2921,22 @@ public abstract class SSLEngineTest {
         assertEquals(numSessions, numIds);
     }
 
-    private void doHandshake(String host, int port) throws Exception {
+    private void doHandshake(String host, int port, boolean reuse) throws Exception {
         SSLEngine clientEngine = null;
         SSLEngine serverEngine = null;
         try {
             clientEngine = wrapEngine(clientSslCtx.newEngine(UnpooledByteBufAllocator.DEFAULT, host, port));
-
             serverEngine = wrapEngine(serverSslCtx.newEngine(UnpooledByteBufAllocator.DEFAULT));
             handshake(clientEngine, serverEngine);
+            assertSessionReusedForEngine(clientEngine, serverEngine, reuse);
         } finally {
             cleanupClientSslEngine(clientEngine);
             cleanupServerSslEngine(serverEngine);
         }
+    }
+
+    protected void assertSessionReusedForEngine(SSLEngine clientEngine, SSLEngine serverEngine, boolean reuse) {
+        // NOOP
     }
 
     @Test

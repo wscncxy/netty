@@ -15,6 +15,9 @@
  */
 package io.netty.handler.ssl;
 
+import io.netty.internal.tcnative.SSLSession;
+import io.netty.util.IllegalReferenceCountException;
+import io.netty.util.ReferenceCounted;
 import io.netty.util.internal.EmptyArrays;
 import io.netty.util.internal.StringUtil;
 
@@ -23,7 +26,7 @@ import javax.security.cert.X509Certificate;
 import java.security.Principal;
 import java.security.cert.Certificate;
 
-final class DefaultOpenSslSession extends AbstractOpenSslSession  {
+final class DefaultOpenSslSession extends AbstractOpenSslSession implements ReferenceCounted {
     private final X509Certificate[] x509PeerCerts;
     private final Certificate[] peerCerts;
     private final String protocol;
@@ -37,7 +40,7 @@ final class DefaultOpenSslSession extends AbstractOpenSslSession  {
     private volatile Certificate[] localCertificateChain;
 
     // Guarded by synchronized(this)
-    private boolean freed;
+    private int refCnt = 1;
 
     DefaultOpenSslSession(OpenSslSessionContext sessionContext, String peerHost, int peerPort, long sslSession,
                           String version,
@@ -70,6 +73,55 @@ final class DefaultOpenSslSession extends AbstractOpenSslSession  {
     }
 
     @Override
+    public OpenSslSession retain() {
+        return retain(1);
+    }
+
+    @Override
+    public synchronized OpenSslSession retain(int increment) {
+        if (refCnt == 0) {
+            throw new IllegalReferenceCountException();
+        }
+        refCnt += increment;
+        return this;
+    }
+
+    @Override
+    public OpenSslSession touch() {
+        return this;
+    }
+
+    @Override
+    public OpenSslSession touch(Object hint) {
+        return this;
+    }
+
+    @Override
+    public synchronized int refCnt() {
+        return refCnt;
+    }
+
+    @Override
+    public boolean release() {
+        return release(1);
+    }
+
+    @Override
+    public synchronized boolean release(int decrement) {
+        if (refCnt - decrement < 0) {
+            throw new IllegalReferenceCountException();
+        }
+        refCnt -= decrement;
+        if (refCnt == 0) {
+            if (sslSession != -1) {
+                SSLSession.free(sslSession);
+            }
+            return true;
+        }
+        return false;
+    }
+
+    @Override
     public boolean isNullSession() {
         return false;
     }
@@ -90,7 +142,7 @@ final class DefaultOpenSslSession extends AbstractOpenSslSession  {
             return;
         }
         synchronized (this) {
-            if (!freed) {
+            if (refCnt != 0) {
                 io.netty.internal.tcnative.SSLSession.setTimeout(sslSession, 0);
             }
         }
@@ -103,7 +155,7 @@ final class DefaultOpenSslSession extends AbstractOpenSslSession  {
         }
         long current = System.currentTimeMillis();
         synchronized (this) {
-            if (!freed) {
+            if (refCnt != 0) {
                 return current -
                         (io.netty.internal.tcnative.SSLSession.getTimeout(sslSession) * 1000L)
                         < getCreationTime();
@@ -132,13 +184,6 @@ final class DefaultOpenSslSession extends AbstractOpenSslSession  {
         if (lastAccessed == -1) {
             lastAccessed = System.currentTimeMillis();
         }
-    }
-
-    @Override
-    public synchronized long free() {
-        long sslSession = this.sslSession;
-        freed = true;
-        return sslSession;
     }
 
     @Override

@@ -64,6 +64,13 @@ public abstract class OpenSslSessionContext implements SSLSessionContext {
         SSLContext.setSSLSessionCache(context.ctx, cache);
     }
 
+    final DefaultOpenSslSession newOpenSslSession(long sslSession, String peerHost,
+                                            int peerPort, String protocol, String cipher,
+                                            OpenSslJavaxX509Certificate[] peerCertificateChain, long creationTime) {
+        return sessionCache.newOpenSslSession(sslSession, this, peerHost, peerPort, protocol, cipher,
+                peerCertificateChain, creationTime);
+    }
+
     @Override
     public void setSessionCacheSize(int size) {
         sessionCache.setSessionCacheSize(size);
@@ -106,7 +113,7 @@ public abstract class OpenSslSessionContext implements SSLSessionContext {
 
     @Override
     public Enumeration<byte[]> getIds() {
-        OpenSslSessionId[] ids = sessionCache.getIds();
+        final OpenSslSessionId[] ids = sessionCache.getIds();
         List<byte[]> idList = new AbstractList<byte[]>() {
             @Override
             public byte[] get(int index) {

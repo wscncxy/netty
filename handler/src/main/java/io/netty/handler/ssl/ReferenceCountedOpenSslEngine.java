@@ -301,8 +301,8 @@ public class ReferenceCountedOpenSslEngine extends SSLEngine implements Referenc
     final synchronized void setupHandshakeSession() {
         OpenSslSession old = session;
         if (old.isNullSession()) {
-            session = wrapSessionIfNeeded(newOpenSslSession());
-            old.free();
+            session = wrapSessionIfNeeded(newOpenSslSession(SSL.getSession(ssl)));
+            old.release();
         }
     }
 
@@ -315,7 +315,7 @@ public class ReferenceCountedOpenSslEngine extends SSLEngine implements Referenc
             this.session = session;
             return session;
         } finally {
-            oldSession.free();
+            oldSession.release();
         }
     }
 
@@ -330,10 +330,11 @@ public class ReferenceCountedOpenSslEngine extends SSLEngine implements Referenc
             if (addr != -1) {
                 if (SSL.setSession(ssl, addr)) {
                     this.session = session;
+                    session.retain();
                 }
             }
         } finally {
-            oldSession.free();
+            oldSession.release();
         }
     }
 
@@ -471,7 +472,7 @@ public class ReferenceCountedOpenSslEngine extends SSLEngine implements Referenc
 
             isInboundDone = outboundClosed = true;
 
-            session.free();
+            session.release();
         }
 
         // On shutdown clear all errors
@@ -1761,7 +1762,7 @@ public class ReferenceCountedOpenSslEngine extends SSLEngine implements Referenc
         Certificate[] local = oldSession.getLocalCertificates();
 
         try {
-            session = wrapSessionIfNeeded(newOpenSslSession());
+            session = wrapSessionIfNeeded(newOpenSslSession(SSL.getSession(ssl)));
             session.setLocalCertificate(local);
 
             selectApplicationProtocol();
@@ -1770,16 +1771,12 @@ public class ReferenceCountedOpenSslEngine extends SSLEngine implements Referenc
             handshakeState = HandshakeState.FINISHED;
             return FINISHED;
         } finally {
-            oldSession.free();
+            oldSession.release();
         }
     }
 
-    DefaultOpenSslSession newOpenSslSession() {
-        return newOpenSslSession(SSL.getSession(ssl));
-    }
-
     private DefaultOpenSslSession newOpenSslSession(long sslSession) {
-        return new DefaultOpenSslSession(parentContext.sessionContext(), getPeerHost(), getPeerPort(), sslSession,
+        return parentContext.sessionContext().newOpenSslSession(sslSession, getPeerHost(), getPeerPort(),
                 SSL.getVersion(ssl), toJavaCipherSuite(SSL.getCipherForSSL(ssl)), generatePeerCertificateChain(),
                 SSL.getTime(ssl) * 1000L);
     }

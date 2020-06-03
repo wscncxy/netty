@@ -15,7 +15,9 @@
  */
 package io.netty.handler.ssl;
 
+import io.netty.internal.tcnative.SSL;
 import io.netty.internal.tcnative.SSLSessionCache;
+import io.netty.util.ReferenceCounted;
 import io.netty.util.internal.SystemPropertyUtil;
 
 import javax.net.ssl.SSLSession;
@@ -45,7 +47,7 @@ class OpenSslSessionCache implements SSLSessionCache {
             if (maxSize >= 0 && this.size() > maxSize) {
                 OpenSslSession session = eldest.getValue();
                 sessionRemoved(session);
-                free(session);
+                session.release();
                 return true;
             }
             return false;
@@ -90,6 +92,21 @@ class OpenSslSessionCache implements SSLSessionCache {
         return maximumCacheSize.get();
     }
 
+    DefaultOpenSslSession newOpenSslSession(long sslSession, OpenSslSessionContext context, String peerHost,
+                                            int peerPort, String protocol, String cipher,
+                                            OpenSslJavaxX509Certificate[] peerCertificateChain,
+                                            long creationTime) {
+        synchronized (this) {
+            if (sslSession != -1) {
+                if (!io.netty.internal.tcnative.SSLSession.upRef(sslSession)) {
+                    throw new IllegalStateException("Unable to update reference count of SSL_SESSION*");
+                }
+            }
+        }
+        return new DefaultOpenSslSession(context, peerHost, peerPort, sslSession, protocol, cipher,
+                peerCertificateChain, creationTime);
+    }
+
     @Override
     public final boolean sessionCreated(long ssl, long sslSession) {
         ReferenceCountedOpenSslEngine engine = engineMap.get(ssl);
@@ -103,10 +120,10 @@ class OpenSslSessionCache implements SSLSessionCache {
                 return false;
             }
 
-            final OpenSslSession old = sessions.put(session.sessionId(), session);
+            final OpenSslSession old = sessions.put(session.sessionId(), session.retain());
             if (old != null) {
                 sessionRemoved(old);
-                free(old);
+                old.release();
             }
         }
         return true;
@@ -134,11 +151,13 @@ class OpenSslSessionCache implements SSLSessionCache {
                 return -1;
             }
 
+            session.retain();
+
             if (io.netty.internal.tcnative.SSLSession.shouldBeSingleUse(nativeAddr)) {
                 // Should only be used once
                 sessions.remove(id);
                 sessionRemoved(session);
-                io.netty.internal.tcnative.SSLSession.free(nativeAddr);
+                session.release();
             }
             session.updateLastAccessedTime();
             return nativeAddr;
@@ -148,7 +167,7 @@ class OpenSslSessionCache implements SSLSessionCache {
     private void removeInvalidSession(OpenSslSession session) {
         sessions.remove(session.sessionId());
         sessionRemoved(session);
-        free(session);
+        session.release();
     }
 
     final SSLSession getSession(byte[] bytes) {
@@ -169,14 +188,7 @@ class OpenSslSessionCache implements SSLSessionCache {
 
         for (OpenSslSession session: sessionsArray) {
             sessionRemoved(session);
-            free(session);
-        }
-    }
-
-    private static void free(OpenSslSession session) {
-        long pointer = session.free();
-        if (pointer != -1) {
-            io.netty.internal.tcnative.SSLSession.free(pointer);
+            session.release();
         }
     }
 }

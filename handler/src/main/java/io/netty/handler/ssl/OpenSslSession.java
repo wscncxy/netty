@@ -15,10 +15,12 @@
  */
 package io.netty.handler.ssl;
 
+import io.netty.util.ReferenceCounted;
+
 import javax.net.ssl.SSLSession;
 import java.security.cert.Certificate;
 
-interface OpenSslSession extends SSLSession {
+interface OpenSslSession extends SSLSession, ReferenceCounted {
 
     OpenSslSessionId sessionId();
 
@@ -59,8 +61,15 @@ interface OpenSslSession extends SSLSession {
      */
     void updateLastAccessedTime();
 
-    /**
-     * Free the underlying native memory
-     */
-    long free();
+    @Override
+    OpenSslSession retain();
+
+    @Override
+    OpenSslSession retain(int increment);
+
+    @Override
+    OpenSslSession touch();
+
+    @Override
+    OpenSslSession touch(Object hint);
 }

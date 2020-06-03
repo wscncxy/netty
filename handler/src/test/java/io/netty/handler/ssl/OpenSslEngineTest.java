@@ -1351,4 +1351,10 @@ public class OpenSslEngineTest extends SSLEngineTest {
         }
         return context;
     }
+
+    @Override
+    protected void assertSessionReusedForEngine(SSLEngine clientEngine, SSLEngine serverEngine, boolean reuse) {
+        assertEquals(reuse, unwrapEngine(clientEngine).isSessionReused());
+        assertEquals(reuse, unwrapEngine(serverEngine).isSessionReused());
+    }
 }

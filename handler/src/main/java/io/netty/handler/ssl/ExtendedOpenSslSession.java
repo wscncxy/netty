@@ -16,7 +16,6 @@
 package io.netty.handler.ssl;
 
 import io.netty.util.internal.EmptyArrays;
-import io.netty.util.internal.StringUtil;
 import io.netty.util.internal.SuppressJava6Requirement;
 
 import javax.net.ssl.ExtendedSSLSession;
@@ -90,11 +89,6 @@ abstract class ExtendedOpenSslSession extends ExtendedSSLSession implements Open
     @Override
     public final void updateLastAccessedTime() {
         wrapped.updateLastAccessedTime();
-    }
-
-    @Override
-    public final long free() {
-        return wrapped.free();
     }
 
     @Override
@@ -224,6 +218,45 @@ abstract class ExtendedOpenSslSession extends ExtendedSSLSession implements Open
     @Override
     public final int getApplicationBufferSize() {
         return wrapped.getApplicationBufferSize();
+    }
+
+    @Override
+    public ExtendedOpenSslSession retain() {
+        wrapped.retain();
+        return this;
+    }
+
+    @Override
+    public ExtendedOpenSslSession retain(int increment) {
+        wrapped.retain(increment);
+        return this;
+    }
+
+    @Override
+    public ExtendedOpenSslSession touch() {
+        wrapped.touch();
+        return this;
+    }
+
+    @Override
+    public ExtendedOpenSslSession touch(Object hint) {
+        wrapped.touch(hint);
+        return this;
+    }
+
+    @Override
+    public int refCnt() {
+        return wrapped.refCnt();
+    }
+
+    @Override
+    public boolean release() {
+        return wrapped.release();
+    }
+
+    @Override
+    public boolean release(int decrement) {
+        return wrapped.release(decrement);
     }
 
     private final class SSLSessionBindingListenerDecorator implements SSLSessionBindingListener {

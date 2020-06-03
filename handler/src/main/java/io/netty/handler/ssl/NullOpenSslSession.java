@@ -62,11 +62,6 @@ final class NullOpenSslSession extends AbstractOpenSslSession {
     }
 
     @Override
-    public long free() {
-        return -1;
-    }
-
-    @Override
     public long getCreationTime() {
         return 0;
     }
@@ -136,5 +131,40 @@ final class NullOpenSslSession extends AbstractOpenSslSession {
     @Override
     public int getApplicationBufferSize() {
         return ReferenceCountedOpenSslEngine.MAX_PLAINTEXT_LENGTH;
+    }
+
+    @Override
+    public OpenSslSession retain() {
+        return this;
+    }
+
+    @Override
+    public OpenSslSession retain(int increment) {
+        return this;
+    }
+
+    @Override
+    public OpenSslSession touch() {
+        return this;
+    }
+
+    @Override
+    public OpenSslSession touch(Object hint) {
+        return this;
+    }
+
+    @Override
+    public int refCnt() {
+        return 1;
+    }
+
+    @Override
+    public boolean release() {
+        return false;
+    }
+
+    @Override
+    public boolean release(int decrement) {
+        return false;
     }
 }
