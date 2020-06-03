@@ -111,7 +111,11 @@ final class NullOpenSslSession extends AbstractOpenSslSession {
 
     @Override
     public Principal getLocalPrincipal() {
-        return null;
+        Certificate[] local = getLocalCertificates();
+        if (SslUtils.isEmpty(local)) {
+            return null;
+        }
+        return ((java.security.cert.X509Certificate) local[0]).getIssuerX500Principal();
     }
 
     @Override

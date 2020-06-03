@@ -185,6 +185,9 @@ public abstract class OpenSslSessionContext implements SSLSessionContext {
         writerLock.lock();
         try {
             SSLContext.setSessionCacheMode(context.ctx, mode);
+            if (!enabled) {
+                sessionCache.freeSessions();
+            }
         } finally {
             writerLock.unlock();
         }

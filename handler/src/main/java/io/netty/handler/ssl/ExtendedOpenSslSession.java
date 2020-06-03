@@ -15,6 +15,8 @@
  */
 package io.netty.handler.ssl;
 
+import io.netty.util.internal.EmptyArrays;
+import io.netty.util.internal.StringUtil;
 import io.netty.util.internal.SuppressJava6Requirement;
 
 import javax.net.ssl.ExtendedSSLSession;
@@ -97,7 +99,7 @@ abstract class ExtendedOpenSslSession extends ExtendedSSLSession implements Open
 
     @Override
     public String[] getPeerSupportedSignatureAlgorithms() {
-        return new String[0];
+        return EmptyArrays.EMPTY_STRINGS;
     }
 
     @Override

@@ -121,22 +121,19 @@ class OpenSslSessionCache implements SSLSessionCache {
                 return -1;
             }
             long nativeAddr = session.nativeAddr();
-            if (nativeAddr ==  -1) {
-                // Should only be used once
-                sessions.remove(id);
-                sessionRemoved(session);
-                return -1;
-            }
-            if (!session.isValid()) {
-                sessions.remove(id);
-                sessionRemoved(session);
-                free(session);
+            if (nativeAddr == -1 || !session.isValid()) {
+                removeInvalidSession(session);
                 return -1;
             }
 
             // This needs to happen in the synchronized block so we ensure we never destroy it before we incremented
             // the reference count.
-            io.netty.internal.tcnative.SSLSession.upRef(nativeAddr);
+            if (!io.netty.internal.tcnative.SSLSession.upRef(nativeAddr)) {
+                // we could not increment the reference count, something is wrong. Let's just drop the session.
+                removeInvalidSession(session);
+                return -1;
+            }
+
             if (io.netty.internal.tcnative.SSLSession.shouldBeSingleUse(nativeAddr)) {
                 // Should only be used once
                 sessions.remove(id);
@@ -146,6 +143,12 @@ class OpenSslSessionCache implements SSLSessionCache {
             session.updateLastAccessedTime();
             return nativeAddr;
         }
+    }
+
+    private void removeInvalidSession(OpenSslSession session) {
+        sessions.remove(session.sessionId());
+        sessionRemoved(session);
+        free(session);
     }
 
     final SSLSession getSession(byte[] bytes) {
