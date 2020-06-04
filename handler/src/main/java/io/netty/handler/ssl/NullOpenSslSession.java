@@ -22,13 +22,59 @@ import javax.security.cert.X509Certificate;
 import java.security.Principal;
 import java.security.cert.Certificate;
 
-final class NullOpenSslSession extends AbstractOpenSslSession {
+final class NullOpenSslSession implements OpenSslSession {
 
+    private final OpenSslSessionContext sessionContext;
     private final Certificate[] localCertificate;
-
+    private final OpenSslSessionId sessionId = new OpenSslSessionId(EmptyArrays.EMPTY_BYTES);
     NullOpenSslSession(OpenSslSessionContext sessionContext, Certificate[] localCertificate) {
-        super(sessionContext, null, -1, EmptyArrays.EMPTY_BYTES);
+        this.sessionContext = sessionContext;
         this.localCertificate = localCertificate;
+    }
+
+    @Override
+    public OpenSslSessionId sessionId() {
+        return sessionId;
+    }
+
+    @Override
+    public OpenSslSessionContext getSessionContext() {
+        return sessionContext;
+    }
+
+    @Override
+    public byte[] getId() {
+        return sessionId.asBytes();
+    }
+
+    @Override
+    public void putValue(String name, Object value) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public Object getValue(String name) {
+        return null;
+    }
+
+    @Override
+    public void removeValue(String name) {
+        // NOOP
+    }
+
+    @Override
+    public String[] getValueNames() {
+        return EmptyArrays.EMPTY_STRINGS;
+    }
+
+    @Override
+    public String getPeerHost() {
+        return null;
+    }
+
+    @Override
+    public int getPeerPort() {
+        return -1;
     }
 
     @Override

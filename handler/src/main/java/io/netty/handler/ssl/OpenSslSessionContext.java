@@ -81,13 +81,11 @@ public abstract class OpenSslSessionContext implements SSLSessionContext {
 
     @Override
     public void setSessionTimeout(int seconds) {
-        if (seconds < 0) {
-            throw new IllegalArgumentException();
-        }
         Lock writerLock = context.ctxLock.writeLock();
         writerLock.lock();
         try {
             SSLContext.setSessionCacheTimeout(context.ctx, seconds);
+            sessionCache.setSessionTimeout(seconds);
         } finally {
             writerLock.unlock();
         }
@@ -95,13 +93,7 @@ public abstract class OpenSslSessionContext implements SSLSessionContext {
 
     @Override
     public int getSessionTimeout() {
-        Lock readerLock = context.ctxLock.readLock();
-        readerLock.lock();
-        try {
-            return (int) SSLContext.getSessionCacheTimeout(context.ctx);
-        } finally {
-            readerLock.unlock();
-        }
+        return sessionCache.getSessionTimeout();
     }
 
     @Override

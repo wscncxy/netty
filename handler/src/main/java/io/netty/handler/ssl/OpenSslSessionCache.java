@@ -15,6 +15,7 @@
  */
 package io.netty.handler.ssl;
 
+import io.netty.internal.tcnative.SSLContext;
 import io.netty.internal.tcnative.SSLSessionCache;
 import io.netty.util.internal.SystemPropertyUtil;
 
@@ -25,6 +26,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.Lock;
 
 // TODO: Handle timeout
 class OpenSslSessionCache implements SSLSessionCache {
@@ -56,10 +58,25 @@ class OpenSslSessionCache implements SSLSessionCache {
     };
 
     private final AtomicInteger maximumCacheSize = new AtomicInteger(DEFAULT_CACHE_SIZE);
+
+    // Let's use the same default value as OpenSSL does.
+    // See https://www.openssl.org/docs/man1.1.1/man3/SSL_get_default_timeout.html
+    private volatile int sessionTimeout = 300;
     private int sessionCounter;
 
     OpenSslSessionCache(OpenSslEngineMap engineMap) {
         this.engineMap = engineMap;
+    }
+
+    void setSessionTimeout(int seconds) {
+        if (seconds < 0) {
+            throw new IllegalArgumentException();
+        }
+        sessionTimeout = seconds;
+    }
+
+    int getSessionTimeout() {
+        return sessionTimeout;
     }
 
     /**
@@ -106,7 +123,7 @@ class OpenSslSessionCache implements SSLSessionCache {
             }
         }
         return new DefaultOpenSslSession(context, peerHost, peerPort, sslSession, protocol, cipher,
-                peerCertificateChain, creationTime);
+                peerCertificateChain, creationTime, context.getSessionTimeout() * 1000L);
     }
 
     private void expungeInvalidSessions() {

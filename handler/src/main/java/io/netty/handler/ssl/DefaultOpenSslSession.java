@@ -16,39 +16,54 @@
 package io.netty.handler.ssl;
 
 import io.netty.internal.tcnative.SSLSession;
-import io.netty.util.IllegalReferenceCountException;
+import io.netty.util.AbstractReferenceCounted;
 import io.netty.util.ReferenceCounted;
 import io.netty.util.internal.EmptyArrays;
+import io.netty.util.internal.ObjectUtil;
 import io.netty.util.internal.StringUtil;
 
 import javax.net.ssl.SSLPeerUnverifiedException;
+import javax.net.ssl.SSLSessionBindingEvent;
+import javax.net.ssl.SSLSessionBindingListener;
 import javax.security.cert.X509Certificate;
 import java.security.Principal;
 import java.security.cert.Certificate;
+import java.util.HashMap;
+import java.util.Map;
 
-final class DefaultOpenSslSession extends AbstractOpenSslSession implements ReferenceCounted {
+final class DefaultOpenSslSession extends AbstractReferenceCounted implements ReferenceCounted, OpenSslSession {
+
+    private final OpenSslSessionContext sessionContext;
+    private final String peerHost;
+    private final int peerPort;
+    private final OpenSslSessionId id;
     private final X509Certificate[] x509PeerCerts;
     private final Certificate[] peerCerts;
     private final String protocol;
     private final String cipher;
     private final long sslSession;
     private final long creationTime;
-    private boolean long timeout;
+    private final long timeout;
 
     private volatile int applicationBufferSize = ReferenceCountedOpenSslEngine.MAX_PLAINTEXT_LENGTH;
     private volatile int packetBufferSize = ReferenceCountedOpenSslEngine.MAX_RECORD_SIZE;
     private volatile long lastAccessed;
     private volatile Certificate[] localCertificateChain;
+    private volatile boolean invalid;
 
     // Guarded by synchronized(this)
-    private int refCnt = 1;
+    // lazy init for memory reasons
+    private Map<String, Object> values;
 
     DefaultOpenSslSession(OpenSslSessionContext sessionContext, String peerHost, int peerPort, long sslSession,
                           String version,
                           String cipher,
                           OpenSslJavaxX509Certificate[] x509PeerCerts,
-                          long creationTime) {
-        super(sessionContext, peerHost, peerPort, id(sslSession));
+                          long creationTime, long timeout) {
+        this.sessionContext = sessionContext;
+        this.peerHost = peerHost;
+        this.peerPort = peerPort;
+        this.id = new OpenSslSessionId(id(sslSession));
         this.sslSession = sslSession;
         this.cipher = cipher == null ? SslUtils.INVALID_CIPHER : cipher;
         this.x509PeerCerts = x509PeerCerts;
@@ -63,6 +78,7 @@ final class DefaultOpenSslSession extends AbstractOpenSslSession implements Refe
         this.protocol = version == null ? StringUtil.EMPTY_STRING : version;
         this.creationTime = creationTime;
         this.lastAccessed = creationTime;
+        this.timeout = timeout;
     }
 
     private static byte[] id(long sslSession) {
@@ -74,52 +90,106 @@ final class DefaultOpenSslSession extends AbstractOpenSslSession implements Refe
     }
 
     @Override
-    public OpenSslSession retain() {
-        return retain(1);
+    public OpenSslSessionContext getSessionContext() {
+        return sessionContext;
     }
 
     @Override
-    public synchronized OpenSslSession retain(int increment) {
-        if (refCnt == 0) {
-            throw new IllegalReferenceCountException();
-        }
-        refCnt += increment;
-        return this;
-    }
+    public void putValue(String name, Object value) {
+        ObjectUtil.checkNotNull(name, "name");
+        ObjectUtil.checkNotNull(value, "value");
 
-    @Override
-    public OpenSslSession touch() {
-        return this;
-    }
-
-    @Override
-    public OpenSslSession touch(Object hint) {
-        return this;
-    }
-
-    @Override
-    public synchronized int refCnt() {
-        return refCnt;
-    }
-
-    @Override
-    public boolean release() {
-        return release(1);
-    }
-
-    @Override
-    public synchronized boolean release(int decrement) {
-        if (refCnt - decrement < 0) {
-            throw new IllegalReferenceCountException();
-        }
-        refCnt -= decrement;
-        if (refCnt == 0) {
-            if (sslSession != -1) {
-                SSLSession.free(sslSession);
+        final Object old;
+        synchronized (this) {
+            Map<String, Object> values = this.values;
+            if (values == null) {
+                // Use size of 2 to keep the memory overhead small
+                values = this.values = new HashMap<String, Object>(2);
             }
-            return true;
+            old = values.put(name, value);
         }
-        return false;
+
+        if (value instanceof SSLSessionBindingListener) {
+            ((SSLSessionBindingListener) value).valueBound(new SSLSessionBindingEvent(this, name));
+        }
+        notifyUnbound(old, name);
+    }
+
+    @Override
+    public Object getValue(String name) {
+        ObjectUtil.checkNotNull(name, "name");
+        synchronized (this) {
+            if (values == null) {
+                return null;
+            }
+            return values.get(name);
+        }
+    }
+
+    @Override
+    public void removeValue(String name) {
+        ObjectUtil.checkNotNull(name, "name");
+
+        final Object old;
+        synchronized (this) {
+            Map<String, Object> values = this.values;
+            if (values == null) {
+                return;
+            }
+            old = values.remove(name);
+        }
+
+        notifyUnbound(old, name);
+    }
+
+    @Override
+    public String[] getValueNames() {
+        synchronized (this) {
+            Map<String, Object> values = this.values;
+            if (values == null || values.isEmpty()) {
+                return EmptyArrays.EMPTY_STRINGS;
+            }
+            return values.keySet().toArray(new String[0]);
+        }
+    }
+
+    private void notifyUnbound(Object value, String name) {
+        if (value instanceof SSLSessionBindingListener) {
+            ((SSLSessionBindingListener) value).valueUnbound(new SSLSessionBindingEvent(this, name));
+        }
+    }
+
+    @Override
+    public String getPeerHost() {
+        return peerHost;
+    }
+
+    @Override
+    public int getPeerPort() {
+        return peerPort;
+    }
+
+    @Override
+    public OpenSslSessionId sessionId() {
+        return id;
+    }
+
+    @Override
+    public byte[] getId() {
+        return sessionId().asBytes();
+    }
+
+    @Override
+    public int hashCode() {
+        return sessionId().hashCode();
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (!(obj instanceof OpenSslSession)) {
+            return false;
+        }
+        return sessionId().equals(((OpenSslSession) obj).sessionId());
     }
 
     @Override
@@ -139,30 +209,22 @@ final class DefaultOpenSslSession extends AbstractOpenSslSession implements Refe
 
     @Override
     public void invalidate() {
-        if (sslSession == -1) {
-            return;
-        }
-        synchronized (this) {
-            if (refCnt != 0) {
-                io.netty.internal.tcnative.SSLSession.setTimeout(sslSession, 0);
-            }
-        }
+        invalid = true;
     }
 
     @Override
     public boolean isValid() {
-        if (sslSession == -1) {
+        if (sslSession == -1 || invalid) {
             return false;
         }
-        long current = System.currentTimeMillis();
-        synchronized (this) {
-            if (refCnt != 0) {
-                return current -
-                        (io.netty.internal.tcnative.SSLSession.getTimeout(sslSession) * 1000L)
-                        < getCreationTime();
-            }
+
+        // Never timeout
+        if (timeout == 0) {
+            return true;
         }
-        return false;
+
+        long current = System.currentTimeMillis();
+        return current - timeout < creationTime;
     }
 
     @Override
@@ -182,9 +244,7 @@ final class DefaultOpenSslSession extends AbstractOpenSslSession implements Refe
 
     @Override
     public void updateLastAccessedTime() {
-        if (lastAccessed == -1) {
-            lastAccessed = System.currentTimeMillis();
-        }
+        lastAccessed = System.currentTimeMillis();
     }
 
     @Override
@@ -255,5 +315,35 @@ final class DefaultOpenSslSession extends AbstractOpenSslSession implements Refe
                 applicationBufferSize != ReferenceCountedOpenSslEngine.MAX_RECORD_SIZE) {
             applicationBufferSize = ReferenceCountedOpenSslEngine.MAX_RECORD_SIZE;
         }
+    }
+
+    @Override
+    protected void deallocate() {
+        if (sslSession != -1) {
+            SSLSession.free(sslSession);
+        }
+    }
+
+    @Override
+    public DefaultOpenSslSession touch() {
+        super.touch();
+        return this;
+    }
+
+    @Override
+    public DefaultOpenSslSession touch(Object hint) {
+        return this;
+    }
+
+    @Override
+    public DefaultOpenSslSession retain() {
+        super.retain();
+        return this;
+    }
+
+    @Override
+    public DefaultOpenSslSession retain(int increment) {
+        super.retain(increment);
+        return this;
     }
 }
