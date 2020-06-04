@@ -1177,9 +1177,23 @@ public class SslHandlerTest {
                             final SslHandler sslHandler = sslServerCtx.newHandler(ch.alloc());
                             ch.pipeline().addLast(sslServerCtx.newHandler(UnpooledByteBufAllocator.DEFAULT));
                             ch.pipeline().addLast(new ChannelInboundHandlerAdapter() {
+
+                                private int handshakeCount;
+
                                 @Override
                                 public void userEventTriggered(ChannelHandlerContext ctx, Object evt)  {
                                     if (evt instanceof SslHandshakeCompletionEvent) {
+                                        handshakeCount++;
+                                        ReferenceCountedOpenSslEngine engine =
+                                                (ReferenceCountedOpenSslEngine) sslHandler.engine();
+                                        // This test only works for non TLSv1.3 as TLSv1.3 will establish sessions after
+                                        // the handshake is done.
+                                        // See https://www.openssl.org/docs/man1.1.1/man3/SSL_CTX_sess_set_get_cb.html
+                                        if (!SslUtils.PROTOCOL_TLS_V1_3.equals(engine.getSession().getProtocol())) {
+                                            // First should not re-use the session
+                                            assertEquals(handshakeCount > 1, engine.isSessionReused());
+                                        }
+
                                         ctx.writeAndFlush(Unpooled.wrappedBuffer(bytes));
                                     }
                                 }
@@ -1237,7 +1251,12 @@ public class SslHandlerTest {
             assertTrue(clientSslHandler.handshakeFuture().sync().isSuccess());
 
             ReferenceCountedOpenSslEngine engine = (ReferenceCountedOpenSslEngine) clientSslHandler.engine();
-            //assertEquals(isReused, engine.isSessionReused());
+            // This test only works for non TLSv1.3 as TLSv1.3 will establish sessions after
+            // the handshake is done.
+            // See https://www.openssl.org/docs/man1.1.1/man3/SSL_CTX_sess_set_get_cb.html
+            if (!SslUtils.PROTOCOL_TLS_V1_3.equals(engine.getSession().getProtocol())) {
+                assertEquals(isReused, engine.isSessionReused());
+            }
             Object obj = queue.take();
             if (obj instanceof ByteBuf) {
                 ByteBuf buffer = (ByteBuf) obj;
