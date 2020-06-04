@@ -96,7 +96,9 @@ final class OpenSslClientSessionCache extends OpenSslSessionCache {
                     !isCipherSuiteEnabled(session, engine.getEnabledCipherSuites())) {
                 return;
             }
-            engine.setSession(session);
+            if (engine.setSession(session)) {
+                session.updateLastAccessedTime();
+            }
         }
     }
 

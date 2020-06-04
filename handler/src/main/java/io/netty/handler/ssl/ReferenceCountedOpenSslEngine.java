@@ -319,7 +319,7 @@ public class ReferenceCountedOpenSslEngine extends SSLEngine implements Referenc
         }
     }
 
-    synchronized void setSession(OpenSslSession session) throws SSLException {
+    synchronized boolean setSession(OpenSslSession session) throws SSLException {
         if (isDestroyed()) {
             throw new SSLException("Already closed");
         }
@@ -331,8 +331,10 @@ public class ReferenceCountedOpenSslEngine extends SSLEngine implements Referenc
                 if (SSL.setSession(ssl, addr)) {
                     this.session = session;
                     session.retain();
+                    return true;
                 }
             }
+            return false;
         } finally {
             oldSession.release();
         }

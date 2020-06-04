@@ -235,8 +235,7 @@ class OpenSslSessionCache implements SSLSessionCache {
     }
 
     final synchronized void freeSessions() {
-        final OpenSslSession[] sessionsArray;
-        sessionsArray = sessions.values().toArray(new OpenSslSession[0]);
+        final OpenSslSession[] sessionsArray = sessions.values().toArray(new OpenSslSession[0]);
         sessions.clear();
 
         for (OpenSslSession session: sessionsArray) {
