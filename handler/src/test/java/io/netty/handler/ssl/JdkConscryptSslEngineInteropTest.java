@@ -23,6 +23,7 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 
+import javax.net.ssl.SSLSessionContext;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -91,5 +92,10 @@ public class JdkConscryptSslEngineInteropTest extends SSLEngineTest {
     public void testHandshakeSession() throws Exception {
         // Ignore as Conscrypt does not correctly return the local certificates while the TrustManager is invoked.
         // See https://github.com/google/conscrypt/issues/634
+    }
+
+    @Override
+    protected void invalidateSessionsAndAssert(SSLSessionContext context) {
+        // Not supported by conscrypt
     }
 }

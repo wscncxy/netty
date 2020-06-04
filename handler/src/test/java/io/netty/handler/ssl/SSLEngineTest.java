@@ -2911,7 +2911,7 @@ public abstract class SSLEngineTest {
         }
     }
 
-    private static void invalidateSessionsAndAssert(SSLSessionContext context) {
+    protected void invalidateSessionsAndAssert(SSLSessionContext context) {
         Enumeration<byte[]> ids = context.getIds();
         while (ids.hasMoreElements()) {
             byte[] id = ids.nextElement();

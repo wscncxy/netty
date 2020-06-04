@@ -33,6 +33,7 @@ final class DefaultOpenSslSession extends AbstractOpenSslSession implements Refe
     private final String cipher;
     private final long sslSession;
     private final long creationTime;
+    private boolean long timeout;
 
     private volatile int applicationBufferSize = ReferenceCountedOpenSslEngine.MAX_PLAINTEXT_LENGTH;
     private volatile int packetBufferSize = ReferenceCountedOpenSslEngine.MAX_RECORD_SIZE;

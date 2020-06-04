@@ -20,6 +20,7 @@ import io.netty.util.internal.SystemPropertyUtil;
 
 import javax.net.ssl.SSLSession;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -55,6 +56,7 @@ class OpenSslSessionCache implements SSLSessionCache {
     };
 
     private final AtomicInteger maximumCacheSize = new AtomicInteger(DEFAULT_CACHE_SIZE);
+    private int sessionCounter;
 
     OpenSslSessionCache(OpenSslEngineMap engineMap) {
         this.engineMap = engineMap;
@@ -107,6 +109,19 @@ class OpenSslSessionCache implements SSLSessionCache {
                 peerCertificateChain, creationTime);
     }
 
+    private void expungeInvalidSessions() {
+        Iterator<Map.Entry<OpenSslSessionId, OpenSslSession>> iterator = sessions.entrySet().iterator();
+        while (iterator.hasNext()) {
+            OpenSslSession session = iterator.next().getValue();
+            if (!session.isValid()) {
+                iterator.remove();
+
+                sessionRemoved(session);
+                session.release();
+            }
+        }
+    }
+
     @Override
     public final boolean sessionCreated(long ssl, long sslSession) {
         ReferenceCountedOpenSslEngine engine = engineMap.get(ssl);
@@ -115,6 +130,13 @@ class OpenSslSessionCache implements SSLSessionCache {
         }
 
         synchronized (this) {
+            // Mimic what OpenSSL is duing and expunge every 255 new sessions
+            // See https://www.openssl.org/docs/man1.0.2/man3/SSL_CTX_flush_sessions.html
+            if (++sessionCounter == 255) {
+                sessionCounter = 0;
+                expungeInvalidSessions();
+            }
+
             OpenSslSession session = engine.setSession(sslSession);
             if (!sessionCreated(session)) {
                 return false;
