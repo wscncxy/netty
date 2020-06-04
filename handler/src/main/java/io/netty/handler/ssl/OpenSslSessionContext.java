@@ -22,11 +22,9 @@ import io.netty.util.internal.ObjectUtil;
 
 import javax.net.ssl.SSLSession;
 import javax.net.ssl.SSLSessionContext;
-import java.util.AbstractList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Enumeration;
-import java.util.List;
 import java.util.concurrent.locks.Lock;
 
 /**
@@ -113,19 +111,7 @@ public abstract class OpenSslSessionContext implements SSLSessionContext {
 
     @Override
     public Enumeration<byte[]> getIds() {
-        final OpenSslSessionId[] ids = sessionCache.getIds();
-        List<byte[]> idList = new AbstractList<byte[]>() {
-            @Override
-            public byte[] get(int index) {
-                return ids[index].asBytes();
-            }
-
-            @Override
-            public int size() {
-                return ids.length;
-            }
-        };
-        return Collections.enumeration(idList);
+        return Collections.enumeration(sessionCache.getIds());
     }
 
     /**

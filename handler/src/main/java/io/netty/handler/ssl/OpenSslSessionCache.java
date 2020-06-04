@@ -15,13 +15,13 @@
  */
 package io.netty.handler.ssl;
 
-import io.netty.internal.tcnative.SSL;
 import io.netty.internal.tcnative.SSLSessionCache;
-import io.netty.util.ReferenceCounted;
 import io.netty.util.internal.SystemPropertyUtil;
 
 import javax.net.ssl.SSLSession;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -164,7 +164,7 @@ class OpenSslSessionCache implements SSLSessionCache {
         }
     }
 
-    private void removeInvalidSession(OpenSslSession session) {
+    protected void removeInvalidSession(OpenSslSession session) {
         sessions.remove(session.sessionId());
         sessionRemoved(session);
         session.release();
@@ -173,12 +173,26 @@ class OpenSslSessionCache implements SSLSessionCache {
     final SSLSession getSession(byte[] bytes) {
         OpenSslSessionId id = new OpenSslSessionId(bytes);
         synchronized (this) {
-            return sessions.get(id);
+            OpenSslSession session = sessions.get(id);
+            if (session == null) {
+                return null;
+            }
+            if (!session.isValid()) {
+                removeInvalidSession(session);
+                return null;
+            }
+            return session;
         }
     }
 
-    final synchronized OpenSslSessionId[] getIds() {
-        return sessions.keySet().toArray(new OpenSslSessionId[0]);
+    final synchronized List<byte[]> getIds() {
+        List<byte[]> ids = new ArrayList<byte[]>(sessions.size());
+        for (OpenSslSession session: sessions.values()) {
+            if (session.isValid()) {
+                ids.add(session.getId());
+            }
+        }
+        return ids;
     }
 
     final synchronized void freeSessions() {

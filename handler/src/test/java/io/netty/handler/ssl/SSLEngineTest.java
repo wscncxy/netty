@@ -2903,8 +2903,22 @@ public abstract class SSLEngineTest {
             doHandshake("b.netty.io", 9999, false);
             assertSessionCache(serverSslCtx.sessionContext(), 2);
             assertSessionCache(clientSslCtx.sessionContext(), 2);
+
+            invalidateSessionsAndAssert(serverSslCtx.sessionContext());
+            invalidateSessionsAndAssert(clientSslCtx.sessionContext());
         } finally {
             ssc.delete();
+        }
+    }
+
+    private static void invalidateSessionsAndAssert(SSLSessionContext context) {
+        Enumeration<byte[]> ids = context.getIds();
+        while (ids.hasMoreElements()) {
+            byte[] id = ids.nextElement();
+            SSLSession session = context.getSession(id);
+            session.invalidate();
+            assertFalse(session.isValid());
+            assertNull(context.getSession(id));
         }
     }
 

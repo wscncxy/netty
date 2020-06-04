@@ -79,13 +79,20 @@ final class OpenSslClientSessionCache extends OpenSslSessionCache {
         if (host == null || port == -1) {
             return;
         }
+        HostPort hostPort = new HostPort(host, port);
         synchronized (this) {
-            OpenSslSession session = sessions.get(new HostPort(host, port));
+            OpenSslSession session = sessions.get(hostPort);
 
-            // Check if we found something in the cache and if we found a session also ensure the protocol
-            // and ciphersuite can be used.
-            if (session == null ||
-                    !isProtocolEnabled(session, engine.getEnabledProtocols()) ||
+            if (session == null) {
+                return;
+            }
+            if (!session.isValid()) {
+                removeInvalidSession(session);
+                return;
+            }
+
+            // Ensure the protocol and ciphersuite can be used.
+            if (!isProtocolEnabled(session, engine.getEnabledProtocols()) ||
                     !isCipherSuiteEnabled(session, engine.getEnabledCipherSuites())) {
                 return;
             }
