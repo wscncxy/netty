@@ -64,12 +64,13 @@ public final class ReferenceCountedOpenSslClientContext extends ReferenceCounted
                                          CipherSuiteFilter cipherFilter, ApplicationProtocolConfig apn,
                                          String[] protocols, long sessionCacheSize, long sessionTimeout,
                                          boolean enableOcsp, String keyStore) throws SSLException {
-        super(ciphers, cipherFilter, apn, sessionCacheSize, sessionTimeout, SSL.SSL_MODE_CLIENT, keyCertChain,
+        super(ciphers, cipherFilter, apn, SSL.SSL_MODE_CLIENT, keyCertChain,
               ClientAuth.NONE, protocols, false, enableOcsp, true);
         boolean success = false;
         try {
             sessionContext = newSessionContext(this, ctx, engineMap, trustCertCollection, trustManagerFactory,
-                                               keyCertChain, key, keyPassword, keyManagerFactory, keyStore);
+                                               keyCertChain, key, keyPassword, keyManagerFactory, keyStore,
+                                               sessionTimeout, sessionCacheSize);
             success = true;
         } finally {
             if (!success) {
@@ -89,7 +90,8 @@ public final class ReferenceCountedOpenSslClientContext extends ReferenceCounted
                                                    TrustManagerFactory trustManagerFactory,
                                                    X509Certificate[] keyCertChain, PrivateKey key,
                                                    String keyPassword, KeyManagerFactory keyManagerFactory,
-                                                   String keyStore) throws SSLException {
+                                                   String keyStore, long sessionCacheSize, long sessionTimeout)
+            throws SSLException {
         if (key == null && keyCertChain != null || key != null && keyCertChain == null) {
             throw new IllegalArgumentException(
                     "Either both keyCertChain and key needs to be null or none of them");
@@ -166,6 +168,12 @@ public final class ReferenceCountedOpenSslClientContext extends ReferenceCounted
             OpenSslClientSessionContext context = new OpenSslClientSessionContext(thiz, keyMaterialProvider);
             // Enable session caching by default
             context.setSessionCacheEnabled(true);
+            if (sessionCacheSize > 0) {
+                context.setSessionCacheSize((int) Math.min(sessionCacheSize, Integer.MAX_VALUE));
+            }
+            if (sessionTimeout > 0) {
+                context.setSessionTimeout((int) Math.min(sessionTimeout, Integer.MAX_VALUE));
+            }
 
             keyMaterialProvider = null;
             return context;

@@ -68,13 +68,14 @@ public final class ReferenceCountedOpenSslServerContext extends ReferenceCounted
             Iterable<String> ciphers, CipherSuiteFilter cipherFilter, OpenSslApplicationProtocolNegotiator apn,
             long sessionCacheSize, long sessionTimeout, ClientAuth clientAuth, String[] protocols, boolean startTls,
             boolean enableOcsp, String keyStore) throws SSLException {
-        super(ciphers, cipherFilter, apn, sessionCacheSize, sessionTimeout, SSL.SSL_MODE_SERVER, keyCertChain,
+        super(ciphers, cipherFilter, apn, SSL.SSL_MODE_SERVER, keyCertChain,
               clientAuth, protocols, startTls, enableOcsp, true);
         // Create a new SSL_CTX and configure it.
         boolean success = false;
         try {
             sessionContext = newSessionContext(this, ctx, engineMap, trustCertCollection, trustManagerFactory,
-                                                      keyCertChain, key, keyPassword, keyManagerFactory, keyStore);
+                    keyCertChain, key, keyPassword, keyManagerFactory, keyStore,
+                    sessionCacheSize, sessionTimeout);
             success = true;
         } finally {
             if (!success) {
@@ -94,7 +95,7 @@ public final class ReferenceCountedOpenSslServerContext extends ReferenceCounted
                                                          TrustManagerFactory trustManagerFactory,
                                                          X509Certificate[] keyCertChain, PrivateKey key,
                                                          String keyPassword, KeyManagerFactory keyManagerFactory,
-                                                         String keyStore)
+                                                         String keyStore, long sessionCacheSize, long sessionTimeout)
             throws SSLException {
         OpenSslKeyMaterialProvider keyMaterialProvider = null;
         try {
@@ -180,6 +181,12 @@ public final class ReferenceCountedOpenSslServerContext extends ReferenceCounted
             sessionContext.setSessionIdContext(ID);
             // Enable session caching by default
             sessionContext.setSessionCacheEnabled(true);
+            if (sessionCacheSize > 0) {
+                sessionContext.setSessionCacheSize((int) Math.min(sessionCacheSize, Integer.MAX_VALUE));
+            }
+            if (sessionTimeout > 0) {
+                sessionContext.setSessionTimeout((int) Math.min(sessionTimeout, Integer.MAX_VALUE));
+            }
 
             keyMaterialProvider = null;
 
