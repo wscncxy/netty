@@ -331,7 +331,7 @@ public class ReferenceCountedOpenSslEngine extends SSLEngine implements Referenc
      * {@code false} otherwise. If {@code true} is returned we also incremented the reference count of the underlying
      * {@code SSL_SESSION*} and called {@link OpenSslSession#retain()}.
      */
-    synchronized boolean sessionCreated(OpenSslSession session) throws SSLException {
+    synchronized boolean setSession(OpenSslSession session) throws SSLException {
         assert getUseClientMode();
         if (isDestroyed()) {
             throw new SSLException("Already closed");

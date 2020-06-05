@@ -102,7 +102,7 @@ final class OpenSslClientSessionCache extends OpenSslSessionCache {
 
             // Try to set the session, if true is returned we retained the session and incremented the reference count
             // of the underlying SSL_SESSION*.
-            if (engine.sessionCreated(session)) {
+            if (engine.setSession(session)) {
                 session.updateLastAccessedTime();
 
                 if (io.netty.internal.tcnative.SSLSession.shouldBeSingleUse(session.nativeAddr())) {
