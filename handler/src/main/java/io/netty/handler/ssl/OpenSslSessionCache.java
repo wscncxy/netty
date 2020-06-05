@@ -15,10 +15,10 @@
  */
 package io.netty.handler.ssl;
 
-import io.netty.internal.tcnative.SSLContext;
 import io.netty.internal.tcnative.SSLSessionCache;
 import io.netty.util.internal.SystemPropertyUtil;
 
+import javax.net.ssl.SSLException;
 import javax.net.ssl.SSLSession;
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -26,12 +26,15 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.locks.Lock;
 
-// TODO: Handle timeout
+
+/**
+ * {@link SSLSessionCache} implementation for our native SSL implementation.
+ */
 class OpenSslSessionCache implements SSLSessionCache {
     private static final int DEFAULT_CACHE_SIZE;
     static {
+        // Respect the same system property as the JDK implementation to make it easy to switch between implementations.
         int cacheSize = SystemPropertyUtil.getInt("javax.net.ssl.sessionCacheSize", 20480);
         if (cacheSize >= 0) {
             DEFAULT_CACHE_SIZE = cacheSize;
@@ -44,7 +47,10 @@ class OpenSslSessionCache implements SSLSessionCache {
 
     private final Map<OpenSslSessionId, OpenSslSession> sessions =
             new LinkedHashMap<OpenSslSessionId, OpenSslSession>() {
-        @Override
+
+                private static final long serialVersionUID = -7773696788135734448L;
+
+                @Override
         protected boolean removeEldestEntry(Map.Entry<OpenSslSessionId, OpenSslSession> eldest) {
             int maxSize = maximumCacheSize.get();
             if (maxSize >= 0 && this.size() > maxSize) {
@@ -154,7 +160,13 @@ class OpenSslSessionCache implements SSLSessionCache {
                 expungeInvalidSessions();
             }
 
-            OpenSslSession session = engine.setSession(sslSession);
+            final OpenSslSession session;
+            try {
+                session = engine.sessionCreated(sslSession);
+            } catch (SSLException e) {
+                // TODO: Should we log this ?
+                return false;
+            }
             if (!sessionCreated(session)) {
                 return false;
             }
@@ -178,7 +190,7 @@ class OpenSslSessionCache implements SSLSessionCache {
             }
             long nativeAddr = session.nativeAddr();
             if (nativeAddr == -1 || !session.isValid()) {
-                removeInvalidSession(session);
+                removeSession(session);
                 return -1;
             }
 
@@ -186,7 +198,7 @@ class OpenSslSessionCache implements SSLSessionCache {
             // the reference count.
             if (!io.netty.internal.tcnative.SSLSession.upRef(nativeAddr)) {
                 // we could not increment the reference count, something is wrong. Let's just drop the session.
-                removeInvalidSession(session);
+                removeSession(session);
                 return -1;
             }
 
@@ -194,16 +206,14 @@ class OpenSslSessionCache implements SSLSessionCache {
 
             if (io.netty.internal.tcnative.SSLSession.shouldBeSingleUse(nativeAddr)) {
                 // Should only be used once
-                sessions.remove(id);
-                sessionRemoved(session);
-                session.release();
+                removeSession(session);
             }
             session.updateLastAccessedTime();
             return nativeAddr;
         }
     }
 
-    protected void removeInvalidSession(OpenSslSession session) {
+    protected void removeSession(OpenSslSession session) {
         sessions.remove(session.sessionId());
         sessionRemoved(session);
         session.release();
@@ -217,7 +227,7 @@ class OpenSslSessionCache implements SSLSessionCache {
                 return null;
             }
             if (!session.isValid()) {
-                removeInvalidSession(session);
+                removeSession(session);
                 return null;
             }
             return session;

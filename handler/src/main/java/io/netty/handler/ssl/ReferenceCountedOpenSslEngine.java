@@ -306,38 +306,48 @@ public class ReferenceCountedOpenSslEngine extends SSLEngine implements Referenc
         }
     }
 
-    synchronized OpenSslSession setSession(long sslSession) {
-        OpenSslSession oldSession = this.session;
-        try {
-            OpenSslSession session = wrapSessionIfNeeded(newOpenSslSession(sslSession));
-            session.setLocalCertificate(oldSession.getLocalCertificates());
-            session.setPacketBufferSize(oldSession.getPacketBufferSize());
-            this.session = session;
-            return session;
-        } finally {
-            oldSession.release();
-        }
-    }
-
-    synchronized boolean setSession(OpenSslSession session) throws SSLException {
+    /**
+     * A new {@code SSL_SESSION*} is created and should be used for this {@link ReferenceCountedOpenSslEngine}.
+     * The new {@link OpenSslSession} will be returned that is created (wrapping the {@code SSL_SESSION*}) and attached
+     * to this engine.
+     */
+    synchronized OpenSslSession sessionCreated(long sslSession) throws SSLException {
         if (isDestroyed()) {
             throw new SSLException("Already closed");
         }
-        assert getUseClientMode();
+
         OpenSslSession oldSession = this.session;
-        try {
-            long addr = session.nativeAddr();
-            if (addr != -1) {
-                if (SSL.setSession(ssl, addr)) {
-                    this.session = session;
-                    session.retain();
-                    return true;
-                }
-            }
-            return false;
-        } finally {
-            oldSession.release();
+        OpenSslSession session = wrapSessionIfNeeded(newOpenSslSession(sslSession));
+        session.setLocalCertificate(oldSession.getLocalCertificates());
+        session.setPacketBufferSize(oldSession.getPacketBufferSize());
+        this.session = session;
+        // Release the old used session
+        oldSession.release();
+        return session;
+    }
+
+    /**
+     * Set a {@link OpenSslSession} to re-use. This will return {@code true} if we were able to re-use the session and
+     * {@code false} otherwise. If {@code true} is returned we also incremented the reference count of the underlying
+     * {@code SSL_SESSION*} and called {@link OpenSslSession#retain()}.
+     */
+    synchronized boolean sessionCreated(OpenSslSession session) throws SSLException {
+        assert getUseClientMode();
+        if (isDestroyed()) {
+            throw new SSLException("Already closed");
         }
+
+        long addr = session.nativeAddr();
+        if (addr != -1) {
+            if (SSL.setSession(ssl, addr)) {
+                session.retain();
+                OpenSslSession oldSession = this.session;
+                this.session = session;
+                oldSession.release();
+                return true;
+            }
+        }
+        return false;
     }
 
     final boolean setKeyMaterial(OpenSslKeyMaterial keyMaterial) throws  Exception {

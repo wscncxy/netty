@@ -40,7 +40,7 @@ public abstract class OpenSslSessionContext implements SSLSessionContext {
     private final OpenSslKeyMaterialProvider provider;
 
     final ReferenceCountedOpenSslContext context;
-    final NullOpenSslSession nullSession;
+    final OpenSslNullSession nullSession;
 
     final OpenSslSessionCache sessionCache;
     private final long mask;
@@ -58,7 +58,7 @@ public abstract class OpenSslSessionContext implements SSLSessionContext {
         sessionCache = cache;
         // If we do not use the KeyManagerFactory we need to set localCertificateChain now.
         // When we use a KeyManagerFactory it will be set during setKeyMaterial(...).
-        nullSession = new NullOpenSslSession(this, provider == null ? context.keyCertChain : null);
+        nullSession = new OpenSslNullSession(this, provider == null ? context.keyCertChain : null);
         SSLContext.setSSLSessionCache(context.ctx, cache);
     }
 

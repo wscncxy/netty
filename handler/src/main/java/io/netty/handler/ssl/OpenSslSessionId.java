@@ -17,12 +17,16 @@ package io.netty.handler.ssl;
 
 import java.util.Arrays;
 
+/**
+ * Represent the session ID used by an {@link OpenSslSession}.
+ */
 final class OpenSslSessionId {
 
     private final byte[] id;
     private final int hashCode;
 
     OpenSslSessionId(byte[] id) {
+        // We take ownership if the byte[] and so there is no need to clone it.
         this.id = id;
         // cache the hashCode as the byte[] array will never change
         this.hashCode = Arrays.hashCode(id);
@@ -45,7 +49,7 @@ final class OpenSslSessionId {
         return hashCode;
     }
 
-    byte[] asBytes() {
+    byte[] cloneBytes() {
         return id.clone();
     }
 }

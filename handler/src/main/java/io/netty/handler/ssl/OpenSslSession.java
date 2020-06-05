@@ -20,8 +20,15 @@ import io.netty.util.ReferenceCounted;
 import javax.net.ssl.SSLSession;
 import java.security.cert.Certificate;
 
+/**
+ * {@link SSLSession} that is specific to our native implementation and {@link ReferenceCounted} to track native
+ * resources.
+ */
 interface OpenSslSession extends SSLSession, ReferenceCounted {
 
+    /**
+     * Return the {@link OpenSslSessionId} that can be used to identify this session.
+     */
     OpenSslSessionId sessionId();
 
     /**

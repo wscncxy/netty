@@ -176,7 +176,7 @@ final class DefaultOpenSslSession extends AbstractReferenceCounted implements Re
 
     @Override
     public byte[] getId() {
-        return sessionId().asBytes();
+        return sessionId().cloneBytes();
     }
 
     @Override

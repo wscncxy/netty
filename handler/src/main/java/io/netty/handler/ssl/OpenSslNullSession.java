@@ -22,12 +22,17 @@ import javax.security.cert.X509Certificate;
 import java.security.Principal;
 import java.security.cert.Certificate;
 
-final class NullOpenSslSession implements OpenSslSession {
+/**
+ * Special {@link OpenSslSession} which represent a {@code NULL} session. This will be used prior the handshake is
+ * started.
+ */
+final class OpenSslNullSession implements OpenSslSession {
 
     private final OpenSslSessionContext sessionContext;
     private final Certificate[] localCertificate;
     private final OpenSslSessionId sessionId = new OpenSslSessionId(EmptyArrays.EMPTY_BYTES);
-    NullOpenSslSession(OpenSslSessionContext sessionContext, Certificate[] localCertificate) {
+
+    OpenSslNullSession(OpenSslSessionContext sessionContext, Certificate[] localCertificate) {
         this.sessionContext = sessionContext;
         this.localCertificate = localCertificate;
     }
@@ -44,7 +49,7 @@ final class NullOpenSslSession implements OpenSslSession {
 
     @Override
     public byte[] getId() {
-        return sessionId.asBytes();
+        return sessionId.cloneBytes();
     }
 
     @Override
@@ -134,10 +139,7 @@ final class NullOpenSslSession implements OpenSslSession {
 
     @Override
     public Certificate[] getLocalCertificates() {
-        if (localCertificate != null) {
-            return localCertificate.clone();
-        }
-        return null;
+        return localCertificate == null ? null : localCertificate.clone();
     }
 
     @Override

@@ -19,6 +19,9 @@ import javax.net.ssl.SSLException;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * {@link OpenSslSessionCache} that is used by the client-side.
+ */
 final class OpenSslClientSessionCache extends OpenSslSessionCache {
     // TODO: Should we support to have a List of OpenSslSessions for a Host/Port key and so be able to
     // support sessions for different protocols / ciphers to the same remote peer ?
@@ -87,7 +90,7 @@ final class OpenSslClientSessionCache extends OpenSslSessionCache {
                 return;
             }
             if (!session.isValid()) {
-                removeInvalidSession(session);
+                removeSession(session);
                 return;
             }
 
@@ -96,15 +99,26 @@ final class OpenSslClientSessionCache extends OpenSslSessionCache {
                     !isCipherSuiteEnabled(session, engine.getEnabledCipherSuites())) {
                 return;
             }
-            if (engine.setSession(session)) {
+
+            // Try to set the session, if true is returned we retained the session and incremented the reference count
+            // of the underlying SSL_SESSION*.
+            if (engine.sessionCreated(session)) {
                 session.updateLastAccessedTime();
+
+                if (io.netty.internal.tcnative.SSLSession.shouldBeSingleUse(session.nativeAddr())) {
+                    // Should only be re-used once so remove it from the cache
+                    removeSession(session);
+                }
             }
         }
     }
 
+    /**
+     * Host / Port tuple used to find a {@link OpenSslSession} in the cache.
+     */
     private static final class HostPort {
-        final String host;
-        final int port;
+        private final String host;
+        private final int port;
 
         HostPort(String host, int port) {
             this.host = host;
