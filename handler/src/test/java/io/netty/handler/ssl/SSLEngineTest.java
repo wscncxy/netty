@@ -2992,6 +2992,44 @@ public abstract class SSLEngineTest {
     }
 
     @Test
+    public void testSessionCacheSize() throws Exception {
+        // This test only works for TLSv1.2 as TLSv1.3 will establish sessions after the handshake is done.
+        // See https://www.openssl.org/docs/man1.1.1/man3/SSL_CTX_sess_set_get_cb.html
+        if (protocolCipherCombo != ProtocolCipherCombo.TLSV12) {
+            return;
+        }
+        clientSslCtx = wrapContext(SslContextBuilder.forClient()
+                .trustManager(InsecureTrustManagerFactory.INSTANCE)
+                .sslProvider(sslClientProvider())
+                .sslContextProvider(clientSslContextProvider())
+                .protocols(protocols())
+                .ciphers(ciphers())
+                .sessionCacheSize(1)
+                .build());
+        SelfSignedCertificate ssc = new SelfSignedCertificate();
+        serverSslCtx = wrapContext(SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey())
+                .sslProvider(sslServerProvider())
+                .sslContextProvider(serverSslContextProvider())
+                .protocols(protocols())
+                .ciphers(ciphers())
+                .sessionCacheSize(1)
+                .build());
+
+        try {
+            doHandshake("a.netty.io", 9999, false);
+            assertSessionCache(serverSslCtx.sessionContext(), 1);
+            assertSessionCache(clientSslCtx.sessionContext(), 1);
+            doHandshake("b.netty.io", 9999, false);
+
+            // As we have a cache size of 1 we should never have more then one session in the cache
+            assertSessionCache(serverSslCtx.sessionContext(), 1);
+            assertSessionCache(clientSslCtx.sessionContext(), 1);
+        } finally {
+            ssc.delete();
+        }
+    }
+
+    @Test
     public void testSessionBindingEvent() throws Exception {
         clientSslCtx = wrapContext(SslContextBuilder.forClient()
                 .trustManager(InsecureTrustManagerFactory.INSTANCE)
