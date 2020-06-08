@@ -2984,7 +2984,7 @@ public abstract class SSLEngineTest {
 
             // Let's sleep for a bit more then 1 second so the cache should timeout the sessions.
             Thread.sleep(1500);
-            //assertSessionCache(serverSslCtx.sessionContext(), 0);
+            assertSessionCache(serverSslCtx.sessionContext(), 0);
             assertSessionCache(clientSslCtx.sessionContext(), 0);
         } finally {
             ssc.delete();

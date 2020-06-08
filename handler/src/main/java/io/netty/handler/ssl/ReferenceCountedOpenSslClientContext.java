@@ -70,7 +70,7 @@ public final class ReferenceCountedOpenSslClientContext extends ReferenceCounted
         try {
             sessionContext = newSessionContext(this, ctx, engineMap, trustCertCollection, trustManagerFactory,
                                                keyCertChain, key, keyPassword, keyManagerFactory, keyStore,
-                                               sessionTimeout, sessionCacheSize);
+                                               sessionCacheSize, sessionTimeout);
             success = true;
         } finally {
             if (!success) {
