@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -303,7 +303,17 @@ public class HttpPostStandardRequestDecoder implements InterfaceHttpPostRequestD
         }
         parseBody();
         if (undecodedChunk != null && undecodedChunk.writerIndex() > discardThreshold) {
-            undecodedChunk.discardReadBytes();
+            if (undecodedChunk.refCnt() == 1) {
+                // It's safe to call discardBytes() as we are the only owner of the buffer.
+                undecodedChunk.discardReadBytes();
+            } else {
+                // There seems to be multiple references of the buffer. Let's copy the data and release the buffer to
+                // ensure we can give back memory to the system.
+                ByteBuf buffer = undecodedChunk.alloc().buffer(undecodedChunk.readableBytes());
+                buffer.writeBytes(undecodedChunk);
+                undecodedChunk.release();
+                undecodedChunk = buffer;
+            }
         }
         return this;
     }

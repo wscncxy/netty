@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -32,10 +32,10 @@ import io.netty.channel.socket.InternetProtocolFamily;
 import io.netty.channel.unix.DatagramSocketAddress;
 import io.netty.channel.unix.Errors;
 import io.netty.channel.unix.Errors.NativeIoException;
-import io.netty.channel.unix.IovArray;
 import io.netty.channel.unix.Socket;
 import io.netty.channel.unix.UnixChannelUtil;
 import io.netty.util.ReferenceCountUtil;
+import io.netty.util.UncheckedBooleanSupplier;
 import io.netty.util.internal.ObjectUtil;
 import io.netty.util.internal.RecyclableArrayList;
 import io.netty.util.internal.StringUtil;
@@ -276,8 +276,10 @@ public final class EpollDatagramChannel extends AbstractEpollChannel implements 
         if (localAddress instanceof InetSocketAddress) {
             InetSocketAddress socketAddress = (InetSocketAddress) localAddress;
             if (socketAddress.getAddress().isAnyLocalAddress() &&
-                    socketAddress.getAddress() instanceof Inet4Address && Socket.isIPv6Preferred()) {
-                localAddress = new InetSocketAddress(LinuxSocket.INET6_ANY, socketAddress.getPort());
+                    socketAddress.getAddress() instanceof Inet4Address) {
+                if (socket.family() == InternetProtocolFamily.IPv6) {
+                    localAddress = new InetSocketAddress(LinuxSocket.INET6_ANY, socketAddress.getPort());
+                }
             }
         }
         super.doBind(localAddress);
@@ -286,19 +288,21 @@ public final class EpollDatagramChannel extends AbstractEpollChannel implements 
 
     @Override
     protected void doWrite(ChannelOutboundBuffer in) throws Exception {
-        for (;;) {
+        int maxMessagesPerWrite = maxMessagesPerWrite();
+        while (maxMessagesPerWrite > 0) {
             Object msg = in.current();
             if (msg == null) {
                 // Wrote all messages.
-                clearFlag(Native.EPOLLOUT);
                 break;
             }
 
             try {
                 // Check if sendmmsg(...) is supported which is only the case for GLIBC 2.14+
-                if (Native.IS_SUPPORTING_SENDMMSG && in.size() > 1) {
+                if (Native.IS_SUPPORTING_SENDMMSG && in.size() > 1 ||
+                        // We only handle UDP_SEGMENT in sendmmsg.
+                        in.current() instanceof SegmentedDatagramPacket) {
                     NativeDatagramPacketArray array = cleanDatagramPacketArray();
-                    array.add(in, isConnected());
+                    array.add(in, isConnected(), maxMessagesPerWrite);
                     int cnt = array.count();
 
                     if (cnt >= 1) {
@@ -306,19 +310,15 @@ public final class EpollDatagramChannel extends AbstractEpollChannel implements 
                         int offset = 0;
                         NativeDatagramPacketArray.NativeDatagramPacket[] packets = array.packets();
 
-                        while (cnt > 0) {
-                            int send = socket.sendmmsg(packets, offset, cnt);
-                            if (send == 0) {
-                                // Did not write all messages.
-                                setFlag(Native.EPOLLOUT);
-                                return;
-                            }
-                            for (int i = 0; i < send; i++) {
-                                in.remove();
-                            }
-                            cnt -= send;
-                            offset += send;
+                        int send = socket.sendmmsg(packets, offset, cnt);
+                        if (send == 0) {
+                            // Did not write all messages.
+                            break;
                         }
+                        for (int i = 0; i < send; i++) {
+                            in.remove();
+                        }
+                        maxMessagesPerWrite -= send;
                         continue;
                     }
                 }
@@ -332,23 +332,31 @@ public final class EpollDatagramChannel extends AbstractEpollChannel implements 
 
                 if (done) {
                     in.remove();
+                    maxMessagesPerWrite --;
                 } else {
-                    // Did not write all messages.
-                    setFlag(Native.EPOLLOUT);
                     break;
                 }
             } catch (IOException e) {
+                maxMessagesPerWrite --;
                 // Continue on write error as a DatagramChannel can write to multiple remote peers
                 //
                 // See https://github.com/netty/netty/issues/2665
                 in.remove(e);
             }
         }
+
+        if (in.isEmpty()) {
+            // Did write all messages.
+            clearFlag(Native.EPOLLOUT);
+        } else {
+            // Did not write all messages.
+            setFlag(Native.EPOLLOUT);
+        }
     }
 
     private boolean doWriteMessage(Object msg) throws Exception {
         final ByteBuf data;
-        InetSocketAddress remoteAddress;
+        final InetSocketAddress remoteAddress;
         if (msg instanceof AddressedEnvelope) {
             @SuppressWarnings("unchecked")
             AddressedEnvelope<ByteBuf, InetSocketAddress> envelope =
@@ -365,42 +373,21 @@ public final class EpollDatagramChannel extends AbstractEpollChannel implements 
             return true;
         }
 
-        final long writtenBytes;
-        if (data.hasMemoryAddress()) {
-            long memoryAddress = data.memoryAddress();
-            if (remoteAddress == null) {
-                writtenBytes = socket.writeAddress(memoryAddress, data.readerIndex(), data.writerIndex());
-            } else {
-                writtenBytes = socket.sendToAddress(memoryAddress, data.readerIndex(), data.writerIndex(),
-                        remoteAddress.getAddress(), remoteAddress.getPort());
-            }
-        } else if (data.nioBufferCount() > 1) {
-            IovArray array = ((EpollEventLoop) eventLoop()).cleanIovArray();
-            array.add(data, data.readerIndex(), data.readableBytes());
-            int cnt = array.count();
-            assert cnt != 0;
-
-            if (remoteAddress == null) {
-                writtenBytes = socket.writevAddresses(array.memoryAddress(0), cnt);
-            } else {
-                writtenBytes = socket.sendToAddresses(array.memoryAddress(0), cnt,
-                        remoteAddress.getAddress(), remoteAddress.getPort());
-            }
-        } else  {
-            ByteBuffer nioData = data.internalNioBuffer(data.readerIndex(), data.readableBytes());
-            if (remoteAddress == null) {
-                writtenBytes = socket.write(nioData, nioData.position(), nioData.limit());
-            } else {
-                writtenBytes = socket.sendTo(nioData, nioData.position(), nioData.limit(),
-                        remoteAddress.getAddress(), remoteAddress.getPort());
-            }
-        }
-
-        return writtenBytes > 0;
+        return doWriteOrSendBytes(data, remoteAddress, false) > 0;
     }
 
     @Override
     protected Object filterOutboundMessage(Object msg) {
+        if (msg instanceof SegmentedDatagramPacket) {
+            if (!Native.IS_SUPPORTING_UDP_SEGMENT) {
+                throw new UnsupportedOperationException(
+                        "unsupported message type: " + StringUtil.simpleClassName(msg) + EXPECTED_TYPES);
+            }
+            SegmentedDatagramPacket packet = (SegmentedDatagramPacket) msg;
+            ByteBuf content = packet.content();
+            return UnixChannelUtil.isBufferCopyNeededForWrite(content) ?
+                    packet.replace(newDirectBuffer(packet, content)) : msg;
+        }
         if (msg instanceof DatagramPacket) {
             DatagramPacket packet = (DatagramPacket) msg;
             ByteBuf content = packet.content();
@@ -512,7 +499,9 @@ public final class EpollDatagramChannel extends AbstractEpollChannel implements 
                         } else {
                             break;
                         }
-                    } while (allocHandle.continueReading());
+                    // We use the TRUE_SUPPLIER as it is also ok to read less then what we did try to read (as long
+                    // as we read anything).
+                    } while (allocHandle.continueReading(UncheckedBooleanSupplier.TRUE_SUPPLIER));
                 } catch (Throwable t) {
                     exception = t;
                 }
