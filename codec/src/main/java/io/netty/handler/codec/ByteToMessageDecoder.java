@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -18,6 +18,7 @@ package io.netty.handler.codec;
 import static io.netty.util.internal.ObjectUtil.checkPositive;
 import static java.util.Objects.requireNonNull;
 
+import io.netty.buffer.ByteBufConvertible;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.CompositeByteBuf;
@@ -268,9 +269,9 @@ public abstract class ByteToMessageDecoder extends ChannelHandlerAdapter {
 
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
-        if (msg instanceof ByteBuf) {
+        if (msg instanceof ByteBufConvertible) {
             try {
-                ByteBuf data = (ByteBuf) msg;
+                ByteBuf data = ((ByteBufConvertible) msg).asByteBuf();
                 first = cumulation == null;
                 if (first) {
                     cumulation = data;
@@ -336,6 +337,7 @@ public abstract class ByteToMessageDecoder extends ChannelHandlerAdapter {
 
     @Override
     public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
+        ctx.fireUserEventTriggered(evt);
         if (evt instanceof ChannelInputShutdownEvent) {
             // The decodeLast method is invoked when a channelInactive event is encountered.
             // This method is responsible for ending requests in some situations and must be called
@@ -343,7 +345,6 @@ public abstract class ByteToMessageDecoder extends ChannelHandlerAdapter {
             assert context.ctx == ctx || ctx == context;
             channelInputClosed(context, false);
         }
-        ctx.fireUserEventTriggered(evt);
     }
 
     private void channelInputClosed(ByteToMessageDecoderContext ctx, boolean callChannelInactive) {
@@ -376,7 +377,14 @@ public abstract class ByteToMessageDecoder extends ChannelHandlerAdapter {
     void channelInputClosed(ByteToMessageDecoderContext ctx) throws Exception {
         if (cumulation != null) {
             callDecode(ctx, cumulation);
-            decodeLast(ctx, cumulation);
+            // If callDecode(...) removed the handle from the pipeline we should not call decodeLast(...) as this would
+            // be unexpected.
+            if (!ctx.isRemoved()) {
+                // Use Unpooled.EMPTY_BUFFER if cumulation become null after calling callDecode(...).
+                // See https://github.com/netty/netty/issues/10802.
+                ByteBuf buffer = cumulation == null ? Unpooled.EMPTY_BUFFER : cumulation;
+                decodeLast(ctx, buffer);
+            }
         } else {
             decodeLast(ctx, Unpooled.EMPTY_BUFFER);
         }

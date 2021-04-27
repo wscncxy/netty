@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -18,6 +18,7 @@ package io.netty.handler.codec.dns;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.socket.DatagramPacket;
+import io.netty.handler.codec.CorruptedFrameException;
 import io.netty.handler.codec.MessageToMessageDecoder;
 import io.netty.util.internal.UnstableApi;
 
@@ -54,7 +55,12 @@ public class DatagramDnsResponseDecoder extends MessageToMessageDecoder<Datagram
 
     @Override
     protected void decode(ChannelHandlerContext ctx, DatagramPacket packet) throws Exception {
-        DnsResponse response = decodeResponse(ctx, packet);
+        final DnsResponse response;
+        try {
+            response = decodeResponse(ctx, packet);
+        } catch (IndexOutOfBoundsException e) {
+            throw new CorruptedFrameException("Unable to decode response", e);
+        }
         ctx.fireChannelRead(response);
     }
 

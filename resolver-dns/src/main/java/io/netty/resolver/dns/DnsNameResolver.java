@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -91,6 +91,7 @@ public class DnsNameResolver extends InetNameResolver {
 
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(DnsNameResolver.class);
     private static final String LOCALHOST = "localhost";
+    private static final String WINDOWS_HOST_NAME;
     private static final InetAddress LOCALHOST_ADDRESS;
     private static final DnsRecord[] EMPTY_ADDITIONALS = new DnsRecord[0];
     private static final DnsRecordType[] IPV4_ONLY_RESOLVED_RECORD_TYPES =
@@ -127,6 +128,14 @@ public class DnsNameResolver extends InetNameResolver {
                 LOCALHOST_ADDRESS = NetUtil.LOCALHOST4;
             }
         }
+
+        String hostName;
+        try {
+            hostName = PlatformDependent.isWindows() ? InetAddress.getLocalHost().getHostName() : null;
+        } catch (Exception ignore) {
+            hostName = null;
+        }
+        WINDOWS_HOST_NAME = hostName;
     }
 
     static {
@@ -272,7 +281,6 @@ public class DnsNameResolver extends InetNameResolver {
      * @param resolvedAddressTypes the preferred address types
      * @param recursionDesired if recursion desired flag must be set
      * @param maxQueriesPerResolve the maximum allowed number of DNS queries for a given name resolution
-     * @param traceEnabled if trace is enabled
      * @param maxPayloadSize the capacity of the datagram packet buffer
      * @param optResourceEnabled if automatic inclusion of a optional records is enabled
      * @param hostsFileEntriesResolver the {@link HostsFileEntriesResolver} used to check for local aliases
@@ -296,7 +304,6 @@ public class DnsNameResolver extends InetNameResolver {
             ResolvedAddressTypes resolvedAddressTypes,
             boolean recursionDesired,
             int maxQueriesPerResolve,
-            boolean traceEnabled,
             int maxPayloadSize,
             boolean optResourceEnabled,
             HostsFileEntriesResolver hostsFileEntriesResolver,
@@ -306,7 +313,7 @@ public class DnsNameResolver extends InetNameResolver {
             boolean decodeIdn) {
         this(eventLoop, channelFactory, resolveCache,
              new AuthoritativeDnsServerCacheAdapter(authoritativeDnsServerCache), dnsQueryLifecycleObserverFactory,
-             queryTimeoutMillis, resolvedAddressTypes, recursionDesired, maxQueriesPerResolve, traceEnabled,
+             queryTimeoutMillis, resolvedAddressTypes, recursionDesired, maxQueriesPerResolve,
              maxPayloadSize, optResourceEnabled, hostsFileEntriesResolver, dnsServerAddressStreamProvider,
              searchDomains, ndots, decodeIdn);
     }
@@ -324,7 +331,6 @@ public class DnsNameResolver extends InetNameResolver {
      * @param resolvedAddressTypes the preferred address types
      * @param recursionDesired if recursion desired flag must be set
      * @param maxQueriesPerResolve the maximum allowed number of DNS queries for a given name resolution
-     * @param traceEnabled if trace is enabled
      * @param maxPayloadSize the capacity of the datagram packet buffer
      * @param optResourceEnabled if automatic inclusion of a optional records is enabled
      * @param hostsFileEntriesResolver the {@link HostsFileEntriesResolver} used to check for local aliases
@@ -348,7 +354,6 @@ public class DnsNameResolver extends InetNameResolver {
             ResolvedAddressTypes resolvedAddressTypes,
             boolean recursionDesired,
             int maxQueriesPerResolve,
-            boolean traceEnabled,
             int maxPayloadSize,
             boolean optResourceEnabled,
             HostsFileEntriesResolver hostsFileEntriesResolver,
@@ -358,7 +363,7 @@ public class DnsNameResolver extends InetNameResolver {
             boolean decodeIdn) {
         this(eventLoop, channelFactory, null, resolveCache, NoopDnsCnameCache.INSTANCE, authoritativeDnsServerCache,
              dnsQueryLifecycleObserverFactory, queryTimeoutMillis, resolvedAddressTypes, recursionDesired,
-             maxQueriesPerResolve, traceEnabled, maxPayloadSize, optResourceEnabled, hostsFileEntriesResolver,
+             maxQueriesPerResolve, maxPayloadSize, optResourceEnabled, hostsFileEntriesResolver,
              dnsServerAddressStreamProvider, searchDomains, ndots, decodeIdn, false);
     }
 
@@ -374,7 +379,34 @@ public class DnsNameResolver extends InetNameResolver {
             ResolvedAddressTypes resolvedAddressTypes,
             boolean recursionDesired,
             int maxQueriesPerResolve,
-            boolean traceEnabled,
+            int maxPayloadSize,
+            boolean optResourceEnabled,
+            HostsFileEntriesResolver hostsFileEntriesResolver,
+            DnsServerAddressStreamProvider dnsServerAddressStreamProvider,
+            String[] searchDomains,
+            int ndots,
+            boolean decodeIdn,
+            boolean completeOncePreferredResolved) {
+        this(eventLoop, channelFactory, socketChannelFactory, resolveCache, cnameCache, authoritativeDnsServerCache,
+                null, dnsQueryLifecycleObserverFactory, queryTimeoutMillis, resolvedAddressTypes,
+                recursionDesired, maxQueriesPerResolve, maxPayloadSize, optResourceEnabled,
+                hostsFileEntriesResolver, dnsServerAddressStreamProvider, searchDomains, ndots, decodeIdn,
+                completeOncePreferredResolved);
+    }
+
+    DnsNameResolver(
+            EventLoop eventLoop,
+            ChannelFactory<? extends DatagramChannel> channelFactory,
+            ChannelFactory<? extends SocketChannel> socketChannelFactory,
+            final DnsCache resolveCache,
+            final DnsCnameCache cnameCache,
+            final AuthoritativeDnsServerCache authoritativeDnsServerCache,
+            SocketAddress localAddress,
+            DnsQueryLifecycleObserverFactory dnsQueryLifecycleObserverFactory,
+            long queryTimeoutMillis,
+            ResolvedAddressTypes resolvedAddressTypes,
+            boolean recursionDesired,
+            int maxQueriesPerResolve,
             int maxPayloadSize,
             boolean optResourceEnabled,
             HostsFileEntriesResolver hostsFileEntriesResolver,
@@ -397,11 +429,7 @@ public class DnsNameResolver extends InetNameResolver {
                 requireNonNull(dnsServerAddressStreamProvider, "dnsServerAddressStreamProvider");
         this.resolveCache = requireNonNull(resolveCache, "resolveCache");
         this.cnameCache = requireNonNull(cnameCache, "cnameCache");
-        this.dnsQueryLifecycleObserverFactory = traceEnabled ?
-                dnsQueryLifecycleObserverFactory instanceof NoopDnsQueryLifecycleObserverFactory ?
-                        new TraceDnsQueryLifeCycleObserverFactory() :
-                        new BiDnsQueryLifecycleObserverFactory(new TraceDnsQueryLifeCycleObserverFactory(),
-                                                               dnsQueryLifecycleObserverFactory) :
+        this.dnsQueryLifecycleObserverFactory =
                 requireNonNull(dnsQueryLifecycleObserverFactory, "dnsQueryLifecycleObserverFactory");
         this.searchDomains = searchDomains != null ? searchDomains.clone() : DEFAULT_SEARCH_DOMAINS;
         this.ndots = ndots >= 0 ? ndots : DEFAULT_OPTIONS.ndots();
@@ -453,7 +481,12 @@ public class DnsNameResolver extends InetNameResolver {
         });
 
         channelFuture = responseHandler.channelActivePromise;
-        ChannelFuture future = b.register();
+        final ChannelFuture future;
+        if (localAddress == null) {
+            future = b.register();
+        } else {
+            future = b.bind(localAddress);
+        }
         Throwable cause = future.cause();
         if (cause != null) {
             if (cause instanceof RuntimeException) {
@@ -649,10 +682,14 @@ public class DnsNameResolver extends InetNameResolver {
             return null;
         } else {
             InetAddress address = hostsFileEntriesResolver.address(hostname, resolvedAddressTypes);
-            if (address == null && PlatformDependent.isWindows() && LOCALHOST.equalsIgnoreCase(hostname)) {
+            if (address == null && PlatformDependent.isWindows() &&
+                    (LOCALHOST.equalsIgnoreCase(hostname) ||
+                            (WINDOWS_HOST_NAME != null && WINDOWS_HOST_NAME.equalsIgnoreCase(hostname)))) {
                 // If we tried to resolve localhost we need workaround that windows removed localhost from its
                 // hostfile in later versions.
                 // See https://github.com/netty/netty/issues/5386
+                // Need a workaround for resolving the host (computer) name in case it cannot be resolved from hostfile
+                // See https://github.com/netty/netty/issues/11142
                 return LOCALHOST_ADDRESS;
             }
             return address;
@@ -816,7 +853,8 @@ public class DnsNameResolver extends InetNameResolver {
         // It was not A/AAAA question or there was no entry in /etc/hosts.
         final DnsServerAddressStream nameServerAddrs =
                 dnsServerAddressStreamProvider.nameServerAddressStream(hostname);
-        new DnsRecordResolveContext(this, promise, question, additionals, nameServerAddrs).resolve(promise);
+        new DnsRecordResolveContext(this, promise, question, additionals, nameServerAddrs, maxQueriesPerResolve)
+                .resolve(promise);
         return promise;
     }
 
@@ -917,13 +955,15 @@ public class DnsNameResolver extends InetNameResolver {
         }
     }
 
-    static <T> void trySuccess(Promise<T> promise, T result) {
-        if (!promise.trySuccess(result)) {
+    static <T> boolean trySuccess(Promise<T> promise, T result) {
+        final boolean notifiedRecords = promise.trySuccess(result);
+        if (!notifiedRecords) {
             // There is nothing really wrong with not be able to notify the promise as we may have raced here because
             // of multiple queries that have been executed. Log it with trace level anyway just in case the user
             // wants to better understand what happened.
             logger.trace("Failed to notify success ({}) to a promise: {}", result, promise);
         }
+        return notifiedRecords;
     }
 
     private static void tryFailure(Promise<?> promise, Throwable cause) {
@@ -1056,13 +1096,14 @@ public class DnsNameResolver extends InetNameResolver {
         final DnsServerAddressStream nameServerAddrs =
                 dnsServerAddressStreamProvider.nameServerAddressStream(hostname);
         new DnsAddressResolveContext(this, originalPromise, hostname, additionals, nameServerAddrs,
-                                     resolveCache, authoritativeDnsServerCache, completeEarlyIfPossible)
+                                     maxQueriesPerResolve, resolveCache,
+                                     authoritativeDnsServerCache, completeEarlyIfPossible)
                 .resolve(promise);
     }
 
     private static String hostname(String inetHost) {
         String hostname = IDN.toASCII(inetHost);
-        // Check for http://bugs.java.com/bugdatabase/view_bug.do?bug_id=6894622
+        // Check for https://bugs.java.com/bugdatabase/view_bug.do?bug_id=6894622
         if (StringUtil.endsWith(inetHost, '.') && !StringUtil.endsWith(hostname, '.')) {
             hostname += ".";
         }

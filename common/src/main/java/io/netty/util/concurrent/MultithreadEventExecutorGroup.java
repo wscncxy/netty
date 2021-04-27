@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -25,6 +25,9 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+
+import static io.netty.util.internal.ObjectUtil.checkPositive;
 
 /**
  * {@link EventExecutorGroup} implementation that handles their tasks with multiple threads at
@@ -114,9 +117,7 @@ public class MultithreadEventExecutorGroup extends AbstractEventExecutorGroup {
      */
     protected MultithreadEventExecutorGroup(int nThreads, Executor executor, int maxPendingTasks,
                                             RejectedExecutionHandler rejectedHandler, Object... args) {
-        if (nThreads <= 0) {
-            throw new IllegalArgumentException(String.format("nThreads: %d (expected: > 0)", nThreads));
-        }
+        checkPositive(nThreads, "nThreads");
 
         if (executor == null) {
             executor = new ThreadPerTaskExecutor(new DefaultThreadFactory(getClass()));
@@ -166,7 +167,10 @@ public class MultithreadEventExecutorGroup extends AbstractEventExecutorGroup {
         readonlyChildren = Collections.unmodifiableList(Arrays.asList(children));
     }
 
-    private final AtomicInteger idx = new AtomicInteger();
+    // Use a 'long' counter to avoid non-round-robin behaviour at the 32-bit overflow boundary.
+    // The 64-bit long solves this by placing the overflow so far into the future, that no system
+    // will encounter this in practice.
+    private final AtomicLong idx = new AtomicLong();
 
     /**
      * The {@link EventExecutor}s that are used by this {@link MultithreadEventExecutorGroup}.
@@ -182,9 +186,9 @@ public class MultithreadEventExecutorGroup extends AbstractEventExecutorGroup {
     @Override
     public EventExecutor next() {
         if (powerOfTwo) {
-            return children[idx.getAndIncrement() & children.length - 1];
+            return children[(int) idx.getAndIncrement() & children.length - 1];
         }
-        return children[Math.abs(idx.getAndIncrement() % children.length)];
+        return children[(int) Math.abs(idx.getAndIncrement() % children.length)];
     }
 
     private static boolean isPowerOfTwo(int val) {

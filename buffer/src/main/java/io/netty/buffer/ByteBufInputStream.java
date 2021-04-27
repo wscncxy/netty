@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -16,6 +16,7 @@
 package io.netty.buffer;
 
 import static java.util.Objects.requireNonNull;
+import static io.netty.util.internal.ObjectUtil.checkPositiveOrZero;
 
 import io.netty.util.ReferenceCounted;
 import io.netty.util.internal.StringUtil;
@@ -111,7 +112,7 @@ public class ByteBufInputStream extends InputStream implements DataInput {
             if (releaseOnClose) {
                 buffer.release();
             }
-            throw new IllegalArgumentException("length: " + length);
+            checkPositiveOrZero(length, "length");
         }
         if (length > buffer.readableBytes()) {
             if (releaseOnClose) {
@@ -153,8 +154,9 @@ public class ByteBufInputStream extends InputStream implements DataInput {
         return endIndex - buffer.readerIndex();
     }
 
+    // Suppress a warning since the class is not thread-safe
     @Override
-    public void mark(int readlimit) {
+    public void mark(int readlimit) { // lgtm[java/non-sync-override]
         markReaderIndex = buffer.readerIndex();
     }
 
@@ -184,8 +186,9 @@ public class ByteBufInputStream extends InputStream implements DataInput {
         return len;
     }
 
+    // Suppress a warning since the class is not thread-safe
     @Override
-    public void reset() throws IOException {
+    public void reset() throws IOException { // lgtm[java/non-sync-override]
         buffer.readerIndex(markReaderIndex);
     }
 

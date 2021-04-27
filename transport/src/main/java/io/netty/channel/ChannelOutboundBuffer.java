@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -15,6 +15,7 @@
  */
 package io.netty.channel;
 
+import io.netty.buffer.ByteBufConvertible;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufHolder;
 import io.netty.buffer.Unpooled;
@@ -197,8 +198,8 @@ public final class ChannelOutboundBuffer {
     }
 
     private static long total(Object msg) {
-        if (msg instanceof ByteBuf) {
-            return ((ByteBuf) msg).readableBytes();
+        if (msg instanceof ByteBufConvertible) {
+            return ((ByteBufConvertible) msg).asByteBuf().readableBytes();
         }
         if (msg instanceof FileRegion) {
             return ((FileRegion) msg).count();
@@ -334,12 +335,12 @@ public final class ChannelOutboundBuffer {
     public void removeBytes(long writtenBytes) {
         for (;;) {
             Object msg = current();
-            if (!(msg instanceof ByteBuf)) {
+            if (!(msg instanceof ByteBufConvertible)) {
                 assert writtenBytes == 0;
                 break;
             }
 
-            final ByteBuf buf = (ByteBuf) msg;
+            final ByteBuf buf = ((ByteBufConvertible) msg).asByteBuf();
             final int readerIndex = buf.readerIndex();
             final int readableBytes = buf.writerIndex() - readerIndex;
 
@@ -406,9 +407,9 @@ public final class ChannelOutboundBuffer {
         final InternalThreadLocalMap threadLocalMap = InternalThreadLocalMap.get();
         ByteBuffer[] nioBuffers = NIO_BUFFERS.get(threadLocalMap);
         Entry entry = flushedEntry;
-        while (isFlushedEntry(entry) && entry.msg instanceof ByteBuf) {
+        while (isFlushedEntry(entry) && entry.msg instanceof ByteBufConvertible) {
             if (!entry.cancelled) {
-                ByteBuf buf = (ByteBuf) entry.msg;
+                ByteBuf buf = ((ByteBufConvertible) entry.msg).asByteBuf();
                 final int readerIndex = buf.readerIndex();
                 final int readableBytes = buf.writerIndex() - readerIndex;
 
@@ -424,7 +425,7 @@ public final class ChannelOutboundBuffer {
                         //
                         // See also:
                         // - https://www.freebsd.org/cgi/man.cgi?query=write&sektion=2
-                        // - http://linux.die.net/man/2/writev
+                        // - https://linux.die.net//man/2/writev
                         break;
                     }
                     nioBufferSize += readableBytes;
@@ -602,7 +603,7 @@ public final class ChannelOutboundBuffer {
             final int oldValue = unwritable;
             final int newValue = oldValue | 1;
             if (UNWRITABLE_UPDATER.compareAndSet(this, oldValue, newValue)) {
-                if (oldValue == 0 && newValue != 0) {
+                if (oldValue == 0) {
                     fireChannelWritabilityChanged(invokeLater);
                 }
                 break;

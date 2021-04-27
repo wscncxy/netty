@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -61,26 +61,21 @@ import static java.util.Objects.requireNonNull;
 
 abstract class DnsResolveContext<T> {
 
-    private static final RuntimeException NXDOMAIN_QUERY_FAILED_EXCEPTION = ThrowableUtil.unknownStackTrace(
-            DnsResolveContextException.newStatic("No answer found and NXDOMAIN response code returned"),
-            DnsResolveContext.class,
-            "onResponse(..)");
-    private static final RuntimeException CNAME_NOT_FOUND_QUERY_FAILED_EXCEPTION = ThrowableUtil.unknownStackTrace(
-            DnsResolveContextException.newStatic("No matching CNAME record found"),
-            DnsResolveContext.class,
-            "onResponseCNAME(..)");
-    private static final RuntimeException NO_MATCHING_RECORD_QUERY_FAILED_EXCEPTION = ThrowableUtil.unknownStackTrace(
-            DnsResolveContextException.newStatic("No matching record type found"),
-            DnsResolveContext.class,
-            "onResponseAorAAAA(..)");
-    private static final RuntimeException UNRECOGNIZED_TYPE_QUERY_FAILED_EXCEPTION = ThrowableUtil.unknownStackTrace(
-            new RuntimeException("Response type was unrecognized"),
-            DnsResolveContext.class,
-            "onResponse(..)");
-    private static final RuntimeException NAME_SERVERS_EXHAUSTED_EXCEPTION = ThrowableUtil.unknownStackTrace(
-            DnsResolveContextException.newStatic("No name servers returned an answer"),
-            DnsResolveContext.class,
-            "tryToFinishResolve(..)");
+    private static final RuntimeException NXDOMAIN_QUERY_FAILED_EXCEPTION =
+            DnsResolveContextException.newStatic("No answer found and NXDOMAIN response code returned",
+            DnsResolveContext.class, "onResponse(..)");
+    private static final RuntimeException CNAME_NOT_FOUND_QUERY_FAILED_EXCEPTION =
+            DnsResolveContextException.newStatic("No matching CNAME record found",
+            DnsResolveContext.class, "onResponseCNAME(..)");
+    private static final RuntimeException NO_MATCHING_RECORD_QUERY_FAILED_EXCEPTION =
+            DnsResolveContextException.newStatic("No matching record type found",
+            DnsResolveContext.class, "onResponseAorAAAA(..)");
+    private static final RuntimeException UNRECOGNIZED_TYPE_QUERY_FAILED_EXCEPTION =
+            DnsResolveContextException.newStatic("Response type was unrecognized",
+            DnsResolveContext.class, "onResponse(..)");
+    private static final RuntimeException NAME_SERVERS_EXHAUSTED_EXCEPTION =
+            DnsResolveContextException.newStatic("No name servers returned an answer",
+            DnsResolveContext.class, "tryToFinishResolve(..)");
 
     final DnsNameResolver parent;
     private final Promise<?> originalPromise;
@@ -88,7 +83,6 @@ abstract class DnsResolveContext<T> {
     private final String hostname;
     private final int dnsClass;
     private final DnsRecordType[] expectedTypes;
-    private final int maxAllowedQueries;
     final DnsRecord[] additionals;
 
     private final Set<Future<AddressedEnvelope<DnsResponse, InetSocketAddress>>> queriesInProgress =
@@ -102,7 +96,7 @@ abstract class DnsResolveContext<T> {
 
     DnsResolveContext(DnsNameResolver parent, Promise<?> originalPromise,
                       String hostname, int dnsClass, DnsRecordType[] expectedTypes,
-                      DnsRecord[] additionals, DnsServerAddressStream nameServerAddrs) {
+                      DnsRecord[] additionals, DnsServerAddressStream nameServerAddrs, int allowedQueries) {
         assert expectedTypes.length > 0;
 
         this.parent = parent;
@@ -113,18 +107,26 @@ abstract class DnsResolveContext<T> {
         this.additionals = additionals;
 
         this.nameServerAddrs = requireNonNull(nameServerAddrs, "nameServerAddrs");
-        maxAllowedQueries = parent.maxQueriesPerResolve();
-        allowedQueries = maxAllowedQueries;
+        this.allowedQueries = allowedQueries;
     }
 
     static final class DnsResolveContextException extends RuntimeException {
+
+        private static final long serialVersionUID = 1209303419266433003L;
 
         private DnsResolveContextException(String message) {
             super(message, null, false, true);
         }
 
-        static DnsResolveContextException newStatic(String message) {
-            return new DnsResolveContextException(message);
+        // Override fillInStackTrace() so we not populate the backtrace via a native call and so leak the
+        // Classloader.
+        @Override
+        public Throwable fillInStackTrace() {
+            return this;
+        }
+
+        static DnsResolveContextException newStatic(String message, Class<?> clazz, String method) {
+            return ThrowableUtil.unknownStackTrace(new DnsResolveContextException(message), clazz, method);
         }
     }
 
@@ -156,7 +158,7 @@ abstract class DnsResolveContext<T> {
                                                      String hostname,
                                                      int dnsClass, DnsRecordType[] expectedTypes,
                                                      DnsRecord[] additionals,
-                                                     DnsServerAddressStream nameServerAddrs);
+                                                     DnsServerAddressStream nameServerAddrs, int allowedQueries);
 
     /**
      * Converts the given {@link DnsRecord} into {@code T}.
@@ -205,7 +207,12 @@ abstract class DnsResolveContext<T> {
                 public void operationComplete(Future<List<T>> future) {
                     Throwable cause = future.cause();
                     if (cause == null) {
-                        promise.trySuccess(future.getNow());
+                        final List<T> result = future.getNow();
+                        if (!promise.trySuccess(result)) {
+                            for (T item : result) {
+                                ReferenceCountUtil.safeRelease(item);
+                            }
+                        }
                     } else {
                         if (DnsNameResolver.isTransportOrTimeoutError(cause)) {
                             promise.tryFailure(new SearchDomainUnknownHostException(cause, hostname));
@@ -245,15 +252,17 @@ abstract class DnsResolveContext<T> {
             initCause(cause.getCause());
         }
 
+        // Suppress a warning since this method doesn't need synchronization
         @Override
-        public Throwable fillInStackTrace() {
+        public Throwable fillInStackTrace() {   // lgtm[java/non-sync-override]
             return this;
         }
     }
 
     void doSearchDomainQuery(String hostname, Promise<List<T>> nextPromise) {
         DnsResolveContext<T> nextContext = newResolverContext(parent, originalPromise, hostname, dnsClass,
-                                                              expectedTypes, additionals, nameServerAddrs);
+                                                              expectedTypes, additionals, nameServerAddrs,
+                parent.maxQueriesPerResolve());
         nextContext.internalResolve(hostname, nextPromise);
     }
 
@@ -483,8 +492,13 @@ abstract class DnsResolveContext<T> {
         DnsCache resolveCache = resolveCache();
         if (!DnsNameResolver.doResolveAllCached(nameServerName, additionals, resolverPromise, resolveCache,
                 parent.resolvedInternetProtocolFamiliesUnsafe())) {
+
             new DnsAddressResolveContext(parent, originalPromise, nameServerName, additionals,
-                                         parent.newNameServerAddressStream(nameServerName), resolveCache,
+                                         parent.newNameServerAddressStream(nameServerName),
+                                         // Resolving the unresolved nameserver must be limited by allowedQueries
+                                         // so we eventually fail
+                                         allowedQueries,
+                                         resolveCache,
                                          redirectAuthoritativeDnsServerCache(authoritativeDnsServerCache()), false)
                     .resolve(resolverPromise);
         }
@@ -948,12 +962,18 @@ abstract class DnsResolveContext<T> {
         if (finalResult != null) {
             if (!promise.isDone()) {
                 // Found at least one resolved record.
-                DnsNameResolver.trySuccess(promise, filterResults(finalResult));
+                final List<T> result = filterResults(finalResult);
+                if (!DnsNameResolver.trySuccess(promise, result)) {
+                    for (T item : result) {
+                        ReferenceCountUtil.safeRelease(item);
+                    }
+                }
             }
             return;
         }
 
         // No resolved address found.
+        final int maxAllowedQueries = parent.maxQueriesPerResolve();
         final int tries = maxAllowedQueries - allowedQueries;
         final StringBuilder buf = new StringBuilder(64);
 
@@ -992,11 +1012,18 @@ abstract class DnsResolveContext<T> {
         }
     }
 
-    private DnsServerAddressStream getNameServers(String hostname) {
-        DnsServerAddressStream stream = getNameServersFromCache(hostname);
-        // We need to obtain a new stream from the parent DnsNameResolver as the hostname may not be the same as the
-        // one used for the original query (for example we may follow CNAMEs).
-        return stream == null ? parent.newNameServerAddressStream(hostname) : stream;
+    private DnsServerAddressStream getNameServers(String name) {
+        DnsServerAddressStream stream = getNameServersFromCache(name);
+        if (stream == null) {
+            // We need to obtain a new stream from the parent DnsNameResolver if the hostname is not the same as
+            // for the original query (for example we may follow CNAMEs). Otherwise let's just duplicate the
+            // original nameservers so we correctly update the internal index
+            if (name.equals(hostname)) {
+                return nameServerAddrs.duplicate();
+            }
+            return parent.newNameServerAddressStream(name);
+        }
+        return stream;
     }
 
     private void followCname(DnsQuestion question, String cname, DnsQueryLifecycleObserver queryLifecycleObserver,

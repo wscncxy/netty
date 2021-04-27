@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -14,6 +14,8 @@
  * under the License.
  */
 package io.netty.handler.codec.compression;
+
+import static io.netty.util.internal.ObjectUtil.checkPositiveOrZero;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
@@ -29,6 +31,7 @@ public abstract class ZlibDecoder extends ByteToMessageDecoder {
      * Maximum allowed size of the decompression buffer.
      */
     protected final int maxAllocation;
+    protected final boolean preferDirect = false;
 
     /**
      * Same as {@link #ZlibDecoder(int)} with maxAllocation = 0.
@@ -44,10 +47,7 @@ public abstract class ZlibDecoder extends ByteToMessageDecoder {
      *          If zero, maximum size is decided by the {@link ByteBufAllocator}.
      */
     public ZlibDecoder(int maxAllocation) {
-        if (maxAllocation < 0) {
-            throw new IllegalArgumentException("maxAllocation must be >= 0");
-        }
-        this.maxAllocation = maxAllocation;
+        this.maxAllocation = checkPositiveOrZero(maxAllocation, "maxAllocation");
     }
 
     /**
@@ -63,10 +63,10 @@ public abstract class ZlibDecoder extends ByteToMessageDecoder {
     protected ByteBuf prepareDecompressBuffer(ChannelHandlerContext ctx, ByteBuf buffer, int preferredSize) {
         if (buffer == null) {
             if (maxAllocation == 0) {
-                return ctx.alloc().heapBuffer(preferredSize);
+                return ctx.alloc().buffer(preferredSize);
             }
 
-            return ctx.alloc().heapBuffer(Math.min(preferredSize, maxAllocation), maxAllocation);
+            return ctx.alloc().buffer(Math.min(preferredSize, maxAllocation), maxAllocation);
         }
 
         // this always expands the buffer if possible, even if the expansion is less than preferredSize

@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -235,11 +235,12 @@ public abstract class AbstractByteBuf extends ByteBuf {
     final void ensureWritable0(int minWritableBytes) {
         final int writerIndex = writerIndex();
         final int targetCapacity = writerIndex + minWritableBytes;
-        if (targetCapacity <= capacity()) {
+        // using non-short-circuit & to reduce branching - this is a hot path and targetCapacity should rarely overflow
+        if (targetCapacity >= 0 & targetCapacity <= capacity()) {
             ensureAccessible();
             return;
         }
-        if (checkBounds && targetCapacity > maxCapacity) {
+        if (checkBounds && (targetCapacity < 0 || targetCapacity > maxCapacity)) {
             ensureAccessible();
             throw new IndexOutOfBoundsException(String.format(
                     "writerIndex(%d) + minWritableBytes(%d) exceeds maxCapacity(%d): %s",
@@ -654,7 +655,7 @@ public abstract class AbstractByteBuf extends ByteBuf {
             } else {
                 checkIndex(index, length);
             }
-            return ByteBufUtil.writeUtf8(this, index, sequence, sequence.length());
+            return ByteBufUtil.writeUtf8(this, index, length, sequence, sequence.length());
         }
         if (charset.equals(CharsetUtil.US_ASCII) || charset.equals(CharsetUtil.ISO_8859_1)) {
             int length = sequence.length();
@@ -1199,43 +1200,9 @@ public abstract class AbstractByteBuf extends ByteBuf {
     @Override
     public int indexOf(int fromIndex, int toIndex, byte value) {
         if (fromIndex <= toIndex) {
-            return firstIndexOf(fromIndex, toIndex, value);
-        } else {
-            return lastIndexOf(fromIndex, toIndex, value);
+            return ByteBufUtil.firstIndexOf(this, fromIndex, toIndex, value);
         }
-    }
-
-    private int firstIndexOf(int fromIndex, int toIndex, byte value) {
-        fromIndex = Math.max(fromIndex, 0);
-        if (fromIndex >= toIndex || capacity() == 0) {
-            return -1;
-        }
-        checkIndex(fromIndex, toIndex - fromIndex);
-
-        for (int i = fromIndex; i < toIndex; i ++) {
-            if (_getByte(i) == value) {
-                return i;
-            }
-        }
-
-        return -1;
-    }
-
-    private int lastIndexOf(int fromIndex, int toIndex, byte value) {
-        fromIndex = Math.min(fromIndex, capacity());
-        if (fromIndex < 0 || capacity() == 0) {
-            return -1;
-        }
-
-        checkIndex(toIndex, fromIndex - toIndex);
-
-        for (int i = fromIndex - 1; i >= toIndex; i --) {
-            if (_getByte(i) == value) {
-                return i;
-            }
-        }
-
-        return -1;
+        return ByteBufUtil.lastIndexOf(this, fromIndex, toIndex, value);
     }
 
     @Override
@@ -1261,58 +1228,37 @@ public abstract class AbstractByteBuf extends ByteBuf {
     @Override
     public int forEachByte(ByteProcessor processor) {
         ensureAccessible();
-        try {
-            return forEachByteAsc0(readerIndex, writerIndex, processor);
-        } catch (Exception e) {
-            PlatformDependent.throwException(e);
-            return -1;
-        }
+        return forEachByteAsc0(readerIndex, writerIndex, processor);
     }
 
     @Override
     public int forEachByte(int index, int length, ByteProcessor processor) {
         checkIndex(index, length);
-        try {
-            return forEachByteAsc0(index, index + length, processor);
-        } catch (Exception e) {
-            PlatformDependent.throwException(e);
-            return -1;
-        }
+        return forEachByteAsc0(index, index + length, processor);
     }
 
-    int forEachByteAsc0(int start, int end, ByteProcessor processor) throws Exception {
+    int forEachByteAsc0(int start, int end, ByteProcessor processor) {
         for (; start < end; ++start) {
             if (!processor.process(_getByte(start))) {
                 return start;
             }
         }
-
         return -1;
     }
 
     @Override
     public int forEachByteDesc(ByteProcessor processor) {
         ensureAccessible();
-        try {
-            return forEachByteDesc0(writerIndex - 1, readerIndex, processor);
-        } catch (Exception e) {
-            PlatformDependent.throwException(e);
-            return -1;
-        }
+        return forEachByteDesc0(writerIndex - 1, readerIndex, processor);
     }
 
     @Override
     public int forEachByteDesc(int index, int length, ByteProcessor processor) {
         checkIndex(index, length);
-        try {
-            return forEachByteDesc0(index + length - 1, index, processor);
-        } catch (Exception e) {
-            PlatformDependent.throwException(e);
-            return -1;
-        }
+        return forEachByteDesc0(index + length - 1, index, processor);
     }
 
-    int forEachByteDesc0(int rStart, final int rEnd, ByteProcessor processor) throws Exception {
+    int forEachByteDesc0(int rStart, final int rEnd, ByteProcessor processor) {
         for (; rStart >= rEnd; --rStart) {
             if (!processor.process(_getByte(rStart))) {
                 return rStart;

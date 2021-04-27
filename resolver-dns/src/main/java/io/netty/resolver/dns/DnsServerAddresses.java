@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -17,6 +17,7 @@
 package io.netty.resolver.dns;
 
 import static java.util.Objects.requireNonNull;
+import static io.netty.util.internal.ObjectUtil.checkNonEmpty;
 
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
@@ -176,11 +177,7 @@ public abstract class DnsServerAddresses {
             list.add(a);
         }
 
-        if (list.isEmpty()) {
-            throw new IllegalArgumentException("empty addresses");
-        }
-
-        return list;
+        return checkNonEmpty(list, "list");
     }
 
     private static List<InetSocketAddress> sanitize(InetSocketAddress[] addresses) {

@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -26,6 +26,7 @@ import io.netty.channel.ChannelOption;
 import io.netty.channel.DefaultFileRegion;
 import io.netty.channel.FileRegion;
 import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.util.internal.PlatformDependent;
 import org.hamcrest.CoreMatchers;
 import org.junit.Test;
 
@@ -39,6 +40,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assert.*;
 
 public class SocketFileRegionTest extends AbstractSocketTest {
@@ -100,7 +102,7 @@ public class SocketFileRegionTest extends AbstractSocketTest {
     }
 
     public void testFileRegionCountLargerThenFile(ServerBootstrap sb, Bootstrap cb) throws Throwable {
-        File file = File.createTempFile("netty-", ".tmp");
+        File file = PlatformDependent.createTempFile("netty-", ".tmp", null);
         file.deleteOnExit();
 
         final FileOutputStream out = new FileOutputStream(file);
@@ -134,7 +136,7 @@ public class SocketFileRegionTest extends AbstractSocketTest {
         cb.option(ChannelOption.AUTO_READ, autoRead);
 
         final int bufferSize = 1024;
-        final File file = File.createTempFile("netty-", ".tmp");
+        final File file = PlatformDependent.createTempFile("netty-", ".tmp", null);
         file.deleteOnExit();
 
         final FileOutputStream out = new FileOutputStream(file);

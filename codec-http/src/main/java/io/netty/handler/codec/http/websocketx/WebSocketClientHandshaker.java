@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -20,7 +20,9 @@ import static java.util.Objects.requireNonNull;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
+import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelOutboundInvoker;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.ChannelPromise;
 import io.netty.channel.SimpleChannelInboundHandler;
@@ -322,9 +324,9 @@ public abstract class WebSocketClientHandshaker {
         } // else mixed cases - which are all errors
 
         if (!protocolValid) {
-            throw new WebSocketHandshakeException(String.format(
+            throw new WebSocketClientHandshakeException(String.format(
                     "Invalid subprotocol. Actual: %s. Expected one of: %s",
-                    receivedProtocol, expectedSubprotocol));
+                    receivedProtocol, expectedSubprotocol), response);
         }
 
         setHandshakeComplete();
@@ -479,7 +481,10 @@ public abstract class WebSocketClientHandshaker {
     protected abstract WebSocketFrameEncoder newWebSocketEncoder();
 
     /**
-     * Performs the closing handshake
+     * Performs the closing handshake.
+     *
+     * When called from within a {@link ChannelHandler} you most likely want to use
+     * {@link #close(ChannelHandlerContext, CloseWebSocketFrame)}.
      *
      * @param channel
      *            Channel
@@ -494,6 +499,9 @@ public abstract class WebSocketClientHandshaker {
     /**
      * Performs the closing handshake
      *
+     * When called from within a {@link ChannelHandler} you most likely want to use
+     * {@link #close(ChannelHandlerContext, CloseWebSocketFrame, ChannelPromise)}.
+     *
      * @param channel
      *            Channel
      * @param frame
@@ -503,20 +511,47 @@ public abstract class WebSocketClientHandshaker {
      */
     public ChannelFuture close(Channel channel, CloseWebSocketFrame frame, ChannelPromise promise) {
         requireNonNull(channel, "channel");
-
-        channel.writeAndFlush(frame, promise);
-        applyForceCloseTimeout(channel, promise);
-        return promise;
+        return close0(channel, channel, frame, promise);
     }
 
-    private void applyForceCloseTimeout(final Channel channel, ChannelFuture flushFuture) {
+    /**
+     * Performs the closing handshake
+     *
+     * @param ctx
+     *            the {@link ChannelHandlerContext} to use.
+     * @param frame
+     *            Closing Frame that was received
+     */
+    public ChannelFuture close(ChannelHandlerContext ctx, CloseWebSocketFrame frame) {
+        requireNonNull(ctx, "ctx");
+        return close(ctx, frame, ctx.newPromise());
+    }
+
+    /**
+     * Performs the closing handshake
+     *
+     * @param ctx
+     *            the {@link ChannelHandlerContext} to use.
+     * @param frame
+     *            Closing Frame that was received
+     * @param promise
+     *            the {@link ChannelPromise} to be notified when the closing handshake is done
+     */
+    public ChannelFuture close(ChannelHandlerContext ctx, CloseWebSocketFrame frame, ChannelPromise promise) {
+        requireNonNull(ctx, "ctx");
+        return close0(ctx, ctx.channel(), frame, promise);
+    }
+
+    private ChannelFuture close0(final ChannelOutboundInvoker invoker, final Channel channel,
+                                 CloseWebSocketFrame frame, ChannelPromise promise) {
+        invoker.writeAndFlush(frame, promise);
         final long forceCloseTimeoutMillis = this.forceCloseTimeoutMillis;
         final WebSocketClientHandshaker handshaker = this;
         if (forceCloseTimeoutMillis <= 0 || !channel.isActive() || forceCloseInit != 0) {
-            return;
+            return promise;
         }
 
-        flushFuture.addListener(future -> {
+        promise.addListener(future -> {
             // If flush operation failed, there is no reason to expect
             // a server to receive CloseFrame. Thus this should be handled
             // by the application separately.
@@ -535,6 +570,7 @@ public abstract class WebSocketClientHandshaker {
                 });
             }
         });
+        return promise;
     }
 
     /**
@@ -570,7 +606,7 @@ public abstract class WebSocketClientHandshaker {
         }
 
         // if the port is not standard (80/443) its needed to add the port to the header.
-        // See http://tools.ietf.org/html/rfc6454#section-6.2
+        // See https://tools.ietf.org/html/rfc6454#section-6.2
         return NetUtil.toSocketAddressString(host, port);
     }
 
@@ -595,7 +631,7 @@ public abstract class WebSocketClientHandshaker {
 
         if (port != defaultPort && port != -1) {
             // if the port is not standard (80/443) its needed to add the port to the header.
-            // See http://tools.ietf.org/html/rfc6454#section-6.2
+            // See https://tools.ietf.org/html/rfc6454#section-6.2
             return schemePrefix + NetUtil.toSocketAddressString(host, port);
         }
         return schemePrefix + host;

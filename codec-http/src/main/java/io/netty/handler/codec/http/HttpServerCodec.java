@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -21,6 +21,9 @@ import io.netty.channel.CombinedChannelDuplexHandler;
 
 import java.util.ArrayDeque;
 import java.util.Queue;
+
+import static io.netty.handler.codec.http.HttpObjectDecoder.DEFAULT_MAX_HEADER_SIZE;
+import static io.netty.handler.codec.http.HttpObjectDecoder.DEFAULT_MAX_INITIAL_LINE_LENGTH;
 
 /**
  * A combination of {@link HttpRequestDecoder} and {@link HttpResponseEncoder}
@@ -40,7 +43,7 @@ public final class HttpServerCodec extends CombinedChannelDuplexHandler<HttpRequ
      * {@code maxChunkSize (8192)}).
      */
     public HttpServerCodec() {
-        this(4096, 8192);
+        this(DEFAULT_MAX_INITIAL_LINE_LENGTH, DEFAULT_MAX_HEADER_SIZE);
     }
 
     /**
@@ -68,6 +71,16 @@ public final class HttpServerCodec extends CombinedChannelDuplexHandler<HttpRequ
           new HttpServerRequestDecoder(maxInitialLineLength, maxHeaderSize,
                   validateHeaders, initialBufferSize),
           new HttpServerResponseEncoder());
+    }
+
+    /**
+     * Creates a new instance with the specified decoder options.
+     */
+    public HttpServerCodec(int maxInitialLineLength, int maxHeaderSize, boolean validateHeaders,
+                           int initialBufferSize, boolean allowDuplicateContentLengths) {
+        init(new HttpServerRequestDecoder(maxInitialLineLength, maxHeaderSize, validateHeaders,
+                                          initialBufferSize, allowDuplicateContentLengths),
+             new HttpServerResponseEncoder());
     }
 
     /**
@@ -100,6 +113,12 @@ public final class HttpServerCodec extends CombinedChannelDuplexHandler<HttpRequ
         @Override
         protected void decode(final ChannelHandlerContext ctx, ByteBuf buffer) throws Exception {
             super.decode(context, buffer);
+        }
+
+        HttpServerRequestDecoder(int maxInitialLineLength, int maxHeaderSize,
+                                 boolean validateHeaders, int initialBufferSize, boolean allowDuplicateContentLengths) {
+            super(maxInitialLineLength, maxHeaderSize, validateHeaders, initialBufferSize,
+                  allowDuplicateContentLengths);
         }
 
         @Override

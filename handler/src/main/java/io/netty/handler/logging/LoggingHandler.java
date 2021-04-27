@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -15,6 +15,7 @@
  */
 package io.netty.handler.logging;
 
+import io.netty.buffer.ByteBufConvertible;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufHolder;
 import io.netty.channel.ChannelHandler;
@@ -314,8 +315,8 @@ public class LoggingHandler implements ChannelHandler {
      * @param arg       the argument of the event
      */
     protected String format(ChannelHandlerContext ctx, String eventName, Object arg) {
-        if (arg instanceof ByteBuf) {
-            return formatByteBuf(ctx, eventName, (ByteBuf) arg);
+        if (arg instanceof ByteBufConvertible) {
+            return formatByteBuf(ctx, eventName, ((ByteBufConvertible) arg).asByteBuf());
         } else if (arg instanceof ByteBufHolder) {
             return formatByteBufHolder(ctx, eventName, (ByteBufHolder) arg);
         } else {

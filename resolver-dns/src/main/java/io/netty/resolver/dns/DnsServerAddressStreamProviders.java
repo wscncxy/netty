@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -23,7 +23,6 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.util.concurrent.TimeUnit;
@@ -37,6 +36,8 @@ public final class DnsServerAddressStreamProviders {
     private static final InternalLogger LOGGER =
             InternalLoggerFactory.getInstance(DnsServerAddressStreamProviders.class);
     private static final MethodHandle STREAM_PROVIDER_CONSTRUCTOR_HANDLE;
+    private static final String MACOS_PROVIDER_CLASS_NAME =
+            "io.netty.resolver.dns.macos.MacOSDnsServerAddressStreamProvider";
 
     static {
         MethodHandle constructorHandle = null;
@@ -47,7 +48,7 @@ public final class DnsServerAddressStreamProviders {
                 Object maybeProvider = AccessController.doPrivileged((PrivilegedAction<Object>) () -> {
                     try {
                         return Class.forName(
-                                "io.netty.resolver.dns.macos.MacOSDnsServerAddressStreamProvider",
+                                MACOS_PROVIDER_CLASS_NAME,
                                 true,
                                 DnsServerAddressStreamProviders.class.getClassLoader());
                     } catch (Throwable cause) {
@@ -58,18 +59,19 @@ public final class DnsServerAddressStreamProviders {
                     @SuppressWarnings("unchecked")
                     Class<? extends DnsServerAddressStreamProvider> providerClass =
                             (Class<? extends DnsServerAddressStreamProvider>) maybeProvider;
-
                     MethodHandles.Lookup lookup = MethodHandles.lookup();
-                    Method method = providerClass.getMethod("ensureAvailability");
-                    method.invoke(null);
                     constructorHandle = lookup.findConstructor(providerClass, MethodType.methodType(void.class));
-                    constructorHandle.invoke();
-                } else if (!(maybeProvider instanceof ClassNotFoundException)) {
+                    constructorHandle.invoke(); // ctor ensures availability
+                    LOGGER.debug("{}: available", MACOS_PROVIDER_CLASS_NAME);
+                } else {
                     throw (Throwable) maybeProvider;
                 }
+            } catch (ClassNotFoundException cause) {
+                LOGGER.warn("Can not find {} in the classpath, fallback to system defaults. This may result in "
+                        + "incorrect DNS resolutions on MacOS.", MACOS_PROVIDER_CLASS_NAME);
             } catch (Throwable cause) {
-                LOGGER.debug(
-                        "Unable to use MacOSDnsServerAddressStreamProvider, fallback to system defaults", cause);
+                LOGGER.error("Unable to load {}, fallback to system defaults. This may result in "
+                        + "incorrect DNS resolutions on MacOS.", MACOS_PROVIDER_CLASS_NAME, cause);
                 constructorHandle = null;
             }
         }

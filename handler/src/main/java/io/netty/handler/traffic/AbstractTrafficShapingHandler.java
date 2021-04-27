@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ * https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -15,6 +15,9 @@
  */
 package io.netty.handler.traffic;
 
+import static io.netty.util.internal.ObjectUtil.checkPositive;
+
+import io.netty.buffer.ByteBufConvertible;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufHolder;
 import io.netty.channel.Channel;
@@ -164,15 +167,12 @@ public abstract class AbstractTrafficShapingHandler implements ChannelHandler {
      *            Must be positive.
      */
     protected AbstractTrafficShapingHandler(long writeLimit, long readLimit, long checkInterval, long maxTime) {
-        if (maxTime <= 0) {
-            throw new IllegalArgumentException("maxTime must be positive");
-        }
+        this.maxTime = checkPositive(maxTime, "maxTime");
 
         userDefinedWritabilityIndex = userDefinedWritabilityIndex();
         this.writeLimit = writeLimit;
         this.readLimit = readLimit;
         this.checkInterval = checkInterval;
-        this.maxTime = maxTime;
     }
 
     /**
@@ -346,10 +346,7 @@ public abstract class AbstractTrafficShapingHandler implements ChannelHandler {
      *            Must be positive.
      */
     public void setMaxTimeWait(long maxTime) {
-        if (maxTime <= 0) {
-            throw new IllegalArgumentException("maxTime must be positive");
-        }
-        this.maxTime = maxTime;
+        this.maxTime = checkPositive(maxTime, "maxTime");
     }
 
     /**
@@ -377,10 +374,7 @@ public abstract class AbstractTrafficShapingHandler implements ChannelHandler {
      *              Must be positive.
      */
     public void setMaxWriteDelay(long maxWriteDelay) {
-        if (maxWriteDelay <= 0) {
-            throw new IllegalArgumentException("maxWriteDelay must be positive");
-        }
-        this.maxWriteDelay = maxWriteDelay;
+        this.maxWriteDelay = checkPositive(maxWriteDelay, "maxWriteDelay");
     }
 
     /**
@@ -650,8 +644,8 @@ public abstract class AbstractTrafficShapingHandler implements ChannelHandler {
      * @return size the size of the msg or {@code -1} if unknown.
      */
     protected long calculateSize(Object msg) {
-        if (msg instanceof ByteBuf) {
-            return ((ByteBuf) msg).readableBytes();
+        if (msg instanceof ByteBufConvertible) {
+            return ((ByteBufConvertible) msg).asByteBuf().readableBytes();
         }
         if (msg instanceof ByteBufHolder) {
             return ((ByteBufHolder) msg).content().readableBytes();

@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -167,16 +167,13 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
     ChannelFuture init(Channel channel) {
         final ChannelPromise promise = channel.newPromise();
         setChannelOptions(channel, newOptionsArray(), logger);
-        setAttributes(channel, attrs0().entrySet().toArray(EMPTY_ATTRIBUTE_ARRAY));
+        setAttributes(channel, newAttributesArray());
 
         ChannelPipeline p = channel.pipeline();
 
         final ChannelHandler currentChildHandler = childHandler;
-        final Entry<ChannelOption<?>, Object>[] currentChildOptions;
-        synchronized (childOptions) {
-            currentChildOptions = childOptions.entrySet().toArray(EMPTY_OPTION_ARRAY);
-        }
-        final Entry<AttributeKey<?>, Object>[] currentChildAttrs = childAttrs.entrySet().toArray(EMPTY_ATTRIBUTE_ARRAY);
+        final Entry<ChannelOption<?>, Object>[] currentChildOptions = newOptionsArray(childOptions);
+        final Entry<AttributeKey<?>, Object>[] currentChildAttrs = newAttributesArray(childAttrs);
 
         p.addLast(new ChannelInitializer<Channel>() {
             @Override
@@ -260,10 +257,10 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
         private void initChild(final Channel child) {
             assert child.eventLoop().inEventLoop();
             try {
-                child.pipeline().addLast(childHandler);
-
                 setChannelOptions(child, childOptions, logger);
                 setAttributes(child, childAttrs);
+
+                child.pipeline().addLast(childHandler);
 
                 child.register().addListener((ChannelFutureListener) future -> {
                     if (!future.isSuccess()) {

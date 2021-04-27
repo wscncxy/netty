@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -284,20 +284,12 @@ public class DefaultChannelPipeline implements ChannelPipeline {
     @Override
     public final ChannelPipeline addFirst(ChannelHandler... handlers) {
         requireNonNull(handlers, "handlers");
-        if (handlers.length == 0 || handlers[0] == null) {
-            return this;
-        }
 
-        int size;
-        for (size = 1; size < handlers.length; size ++) {
-            if (handlers[size] == null) {
-                break;
-            }
-        }
-
-        for (int i = size - 1; i >= 0; i --) {
+        for (int i = handlers.length - 1; i >= 0; i--) {
             ChannelHandler h = handlers[i];
-            addFirst(null, h);
+            if (h != null) {
+                addFirst(null, h);
+            }
         }
 
         return this;
@@ -311,11 +303,10 @@ public class DefaultChannelPipeline implements ChannelPipeline {
     public final ChannelPipeline addLast(ChannelHandler... handlers) {
         requireNonNull(handlers, "handlers");
 
-        for (ChannelHandler h: handlers) {
-            if (h == null) {
-                break;
+        for (ChannelHandler h : handlers) {
+            if (h != null) {
+                addLast(null, h);
             }
-            addLast(null, h);
         }
 
         return this;

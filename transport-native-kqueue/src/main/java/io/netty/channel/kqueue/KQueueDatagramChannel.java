@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -15,6 +15,7 @@
  */
 package io.netty.channel.kqueue;
 
+import io.netty.buffer.ByteBufConvertible;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 import io.netty.channel.AddressedEnvelope;
@@ -32,6 +33,7 @@ import io.netty.channel.unix.DatagramSocketAddress;
 import io.netty.channel.unix.Errors;
 import io.netty.channel.unix.IovArray;
 import io.netty.channel.unix.UnixChannelUtil;
+import io.netty.util.UncheckedBooleanSupplier;
 import io.netty.util.internal.StringUtil;
 import io.netty.util.internal.UnstableApi;
 
@@ -245,11 +247,10 @@ public final class KQueueDatagramChannel extends AbstractKQueueChannel implement
 
     @Override
     protected void doWrite(ChannelOutboundBuffer in) throws Exception {
-        for (;;) {
+        int maxMessagesPerWrite = maxMessagesPerWrite();
+        while (maxMessagesPerWrite > 0) {
             Object msg = in.current();
             if (msg == null) {
-                // Wrote all messages.
-                writeFilter(false);
                 break;
             }
 
@@ -264,18 +265,22 @@ public final class KQueueDatagramChannel extends AbstractKQueueChannel implement
 
                 if (done) {
                     in.remove();
+                    maxMessagesPerWrite --;
                 } else {
-                    // Did not write all messages.
-                    writeFilter(true);
-                    break;
+                   break;
                 }
             } catch (IOException e) {
+                maxMessagesPerWrite --;
+
                 // Continue on write error as a DatagramChannel can write to multiple remote peers
                 //
                 // See https://github.com/netty/netty/issues/2665
                 in.remove(e);
             }
         }
+
+        // Whether all messages were written or not.
+        writeFilter(!in.isEmpty());
     }
 
     private boolean doWriteMessage(Object msg) throws Exception {
@@ -288,7 +293,7 @@ public final class KQueueDatagramChannel extends AbstractKQueueChannel implement
             data = envelope.content();
             remoteAddress = envelope.recipient();
         } else {
-            data = (ByteBuf) msg;
+            data = ((ByteBufConvertible) msg).asByteBuf();
             remoteAddress = null;
         }
 
@@ -340,18 +345,18 @@ public final class KQueueDatagramChannel extends AbstractKQueueChannel implement
                     new DatagramPacket(newDirectBuffer(packet, content), packet.recipient()) : msg;
         }
 
-        if (msg instanceof ByteBuf) {
-            ByteBuf buf = (ByteBuf) msg;
+        if (msg instanceof ByteBufConvertible) {
+            ByteBuf buf = ((ByteBufConvertible) msg).asByteBuf();
             return UnixChannelUtil.isBufferCopyNeededForWrite(buf)? newDirectBuffer(buf) : buf;
         }
 
         if (msg instanceof AddressedEnvelope) {
             @SuppressWarnings("unchecked")
             AddressedEnvelope<Object, SocketAddress> e = (AddressedEnvelope<Object, SocketAddress>) msg;
-            if (e.content() instanceof ByteBuf &&
-                    (e.recipient() == null || e.recipient() instanceof InetSocketAddress)) {
+            if (e.content() instanceof ByteBufConvertible &&
+                (e.recipient() == null || e.recipient() instanceof InetSocketAddress)) {
 
-                ByteBuf content = (ByteBuf) e.content();
+                ByteBuf content = ((ByteBufConvertible) e.content()).asByteBuf();
                 return UnixChannelUtil.isBufferCopyNeededForWrite(content)?
                         new DefaultAddressedEnvelope<>(
                                 newDirectBuffer(e, content), (InetSocketAddress) e.recipient()) : e;
@@ -468,7 +473,10 @@ public final class KQueueDatagramChannel extends AbstractKQueueChannel implement
                         pipeline.fireChannelRead(packet);
 
                         byteBuf = null;
-                    } while (allocHandle.continueReading());
+
+                    // We use the TRUE_SUPPLIER as it is also ok to read less then what we did try to read (as long
+                    // as we read anything).
+                    } while (allocHandle.continueReading(UncheckedBooleanSupplier.TRUE_SUPPLIER));
                 } catch (Throwable t) {
                     if (byteBuf != null) {
                         byteBuf.release();

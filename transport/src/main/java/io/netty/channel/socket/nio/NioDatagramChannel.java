@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -15,8 +15,7 @@
  */
 package io.netty.channel.socket.nio;
 
-import static java.util.Objects.requireNonNull;
-
+import io.netty.buffer.ByteBufConvertible;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.AddressedEnvelope;
 import io.netty.channel.Channel;
@@ -33,8 +32,8 @@ import io.netty.channel.nio.AbstractNioMessageChannel;
 import io.netty.channel.socket.DatagramChannelConfig;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.channel.socket.InternetProtocolFamily;
+import io.netty.util.UncheckedBooleanSupplier;
 import io.netty.util.internal.SocketUtils;
-import io.netty.util.internal.PlatformDependent;
 import io.netty.util.internal.StringUtil;
 
 import java.io.IOException;
@@ -53,6 +52,8 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+
+import static java.util.Objects.requireNonNull;
 
 /**
  * An NIO datagram {@link Channel} that sends and receives an
@@ -252,10 +253,7 @@ public final class NioDatagramChannel
                     localAddress(), remoteAddress));
             free = false;
             return 1;
-        } catch (Throwable cause) {
-            PlatformDependent.throwException(cause);
-            return -1;
-        }  finally {
+        } finally {
             if (free) {
                 data.release();
             }
@@ -272,7 +270,7 @@ public final class NioDatagramChannel
             remoteAddress = envelope.recipient();
             data = envelope.content();
         } else {
-            data = (ByteBuf) msg;
+            data = ((ByteBufConvertible) msg).asByteBuf();
             remoteAddress = null;
         }
 
@@ -303,8 +301,8 @@ public final class NioDatagramChannel
             return new DatagramPacket(newDirectBuffer(p, content), p.recipient());
         }
 
-        if (msg instanceof ByteBuf) {
-            ByteBuf buf = (ByteBuf) msg;
+        if (msg instanceof ByteBufConvertible) {
+            ByteBuf buf = ((ByteBufConvertible) msg).asByteBuf();
             if (isSingleDirectBuffer(buf)) {
                 return buf;
             }
@@ -314,8 +312,8 @@ public final class NioDatagramChannel
         if (msg instanceof AddressedEnvelope) {
             @SuppressWarnings("unchecked")
             AddressedEnvelope<Object, SocketAddress> e = (AddressedEnvelope<Object, SocketAddress>) msg;
-            if (e.content() instanceof ByteBuf) {
-                ByteBuf content = (ByteBuf) e.content();
+            if (e.content() instanceof ByteBufConvertible) {
+                ByteBuf content = ((ByteBufConvertible) e.content()).asByteBuf();
                 if (isSingleDirectBuffer(content)) {
                     return e;
                 }
@@ -569,12 +567,6 @@ public final class NioDatagramChannel
         return promise;
     }
 
-    @Override
-    @Deprecated
-    protected void setReadPending(boolean readPending) {
-        super.setReadPending(readPending);
-    }
-
     void clearReadPending0() {
         clearReadPending();
     }
@@ -587,5 +579,16 @@ public final class NioDatagramChannel
             return false;
         }
         return super.closeOnReadError(cause);
+    }
+
+    @Override
+    protected boolean continueReading(RecvByteBufAllocator.Handle allocHandle) {
+        if (allocHandle instanceof RecvByteBufAllocator.ExtendedHandle) {
+            // We use the TRUE_SUPPLIER as it is also ok to read less then what we did try to read (as long
+            // as we read anything).
+            return ((RecvByteBufAllocator.ExtendedHandle) allocHandle)
+                    .continueReading(UncheckedBooleanSupplier.TRUE_SUPPLIER);
+        }
+        return allocHandle.continueReading();
     }
 }

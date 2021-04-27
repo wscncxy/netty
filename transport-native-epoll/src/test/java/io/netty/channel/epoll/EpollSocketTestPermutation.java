@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -19,6 +19,7 @@ import io.netty.bootstrap.Bootstrap;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFactory;
+import io.netty.channel.ChannelOption;
 import io.netty.channel.EventLoop;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.MultithreadEventLoopGroup;
@@ -32,18 +33,14 @@ import io.netty.testsuite.transport.TestsuitePermutation;
 import io.netty.testsuite.transport.TestsuitePermutation.BootstrapFactory;
 import io.netty.testsuite.transport.socket.SocketTestPermutation;
 import io.netty.util.concurrent.DefaultThreadFactory;
-import io.netty.util.internal.logging.InternalLogger;
-import io.netty.util.internal.logging.InternalLoggerFactory;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileReader;
-import java.security.AccessController;
-import java.security.PrivilegedAction;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+
+import static io.netty.channel.epoll.Native.IS_SUPPORTING_TCP_FASTOPEN_CLIENT;
+import static io.netty.channel.epoll.Native.IS_SUPPORTING_TCP_FASTOPEN_SERVER;
 
 class EpollSocketTestPermutation extends SocketTestPermutation {
 
@@ -56,11 +53,15 @@ class EpollSocketTestPermutation extends SocketTestPermutation {
             new MultithreadEventLoopGroup(WORKERS, new DefaultThreadFactory("testsuite-epoll-worker", true),
                     EpollHandler.newFactory());
 
-    private static final InternalLogger logger = InternalLoggerFactory.getInstance(EpollSocketTestPermutation.class);
-
     @Override
     public List<TestsuitePermutation.BootstrapComboFactory<ServerBootstrap, Bootstrap>> socket() {
+        List<TestsuitePermutation.BootstrapComboFactory<ServerBootstrap, Bootstrap>> list =
+                combo(serverSocket(), clientSocketWithFastOpen());
 
+        return list.subList(0, list.size() - 1); // Exclude NIO x NIO test
+    }
+
+    public List<TestsuitePermutation.BootstrapComboFactory<ServerBootstrap, Bootstrap>> socketWithoutFastOpen() {
         List<TestsuitePermutation.BootstrapComboFactory<ServerBootstrap, Bootstrap>> list =
                 combo(serverSocket(), clientSocket());
 
@@ -69,13 +70,12 @@ class EpollSocketTestPermutation extends SocketTestPermutation {
         return list;
     }
 
-    @SuppressWarnings("unchecked")
     @Override
     public List<BootstrapFactory<ServerBootstrap>> serverSocket() {
         List<BootstrapFactory<ServerBootstrap>> toReturn = new ArrayList<>();
         toReturn.add(() -> new ServerBootstrap().group(EPOLL_BOSS_GROUP, EPOLL_WORKER_GROUP)
                                     .channel(EpollServerSocketChannel.class));
-        if (isServerFastOpen()) {
+        if (IS_SUPPORTING_TCP_FASTOPEN_SERVER) {
             toReturn.add(() -> {
                 ServerBootstrap serverBootstrap = new ServerBootstrap().group(EPOLL_BOSS_GROUP, EPOLL_WORKER_GROUP)
                                                                        .channel(EpollServerSocketChannel.class);
@@ -89,20 +89,30 @@ class EpollSocketTestPermutation extends SocketTestPermutation {
         return toReturn;
     }
 
-    @SuppressWarnings("unchecked")
     @Override
     public List<BootstrapFactory<Bootstrap>> clientSocket() {
-        return Arrays.asList(
-                () -> new Bootstrap().group(EPOLL_WORKER_GROUP).channel(EpollSocketChannel.class),
-                () -> new Bootstrap().group(nioWorkerGroup).channel(NioSocketChannel.class)
-        );
+        List<BootstrapFactory<Bootstrap>> toReturn = new ArrayList<BootstrapFactory<Bootstrap>>();
+        toReturn.add(() -> new Bootstrap().group(EPOLL_WORKER_GROUP).channel(EpollSocketChannel.class));
+        toReturn.add(() -> new Bootstrap().group(nioWorkerGroup).channel(NioSocketChannel.class));
+        return toReturn;
+    }
+
+    @Override
+    public List<BootstrapFactory<Bootstrap>> clientSocketWithFastOpen() {
+        List<BootstrapFactory<Bootstrap>> factories = clientSocket();
+
+        if (IS_SUPPORTING_TCP_FASTOPEN_CLIENT) {
+            int insertIndex = factories.size() - 1; // Keep NIO fixture last.
+            factories.add(insertIndex, () -> new Bootstrap().group(EPOLL_WORKER_GROUP).channel(EpollSocketChannel.class)
+                    .option(ChannelOption.TCP_FASTOPEN_CONNECT, true));
+        }
+        return clientSocket();
     }
 
     @Override
     public List<TestsuitePermutation.BootstrapComboFactory<Bootstrap, Bootstrap>> datagram(
             final InternetProtocolFamily family) {
         // Make the list of Bootstrap factories.
-        @SuppressWarnings("unchecked")
         List<BootstrapFactory<Bootstrap>> bfs = Arrays.asList(
                 () -> new Bootstrap().group(nioWorkerGroup).channelFactory(new ChannelFactory<Channel>() {
                     @Override
@@ -136,7 +146,7 @@ class EpollSocketTestPermutation extends SocketTestPermutation {
                 Collections.singletonList(datagramBootstrapFactory(family)));
     }
 
-    private BootstrapFactory<Bootstrap> datagramBootstrapFactory(final InternetProtocolFamily family) {
+    private static BootstrapFactory<Bootstrap> datagramBootstrapFactory(final InternetProtocolFamily family) {
         return () -> new Bootstrap().group(EPOLL_WORKER_GROUP).channelFactory(new ChannelFactory<Channel>() {
             @Override
             public Channel newChannel(EventLoop eventLoop) {
@@ -151,10 +161,7 @@ class EpollSocketTestPermutation extends SocketTestPermutation {
     }
 
     public List<TestsuitePermutation.BootstrapComboFactory<ServerBootstrap, Bootstrap>> domainSocket() {
-
-        List<TestsuitePermutation.BootstrapComboFactory<ServerBootstrap, Bootstrap>> list =
-                combo(serverDomainSocket(), clientDomainSocket());
-        return list;
+        return combo(serverDomainSocket(), clientDomainSocket());
     }
 
     public List<BootstrapFactory<ServerBootstrap>> serverDomainSocket() {
@@ -175,38 +182,6 @@ class EpollSocketTestPermutation extends SocketTestPermutation {
         return Collections.singletonList(
                 () -> new Bootstrap().group(EPOLL_WORKER_GROUP).channel(EpollDatagramChannel.class)
         );
-    }
-
-    public boolean isServerFastOpen() {
-        return AccessController.doPrivileged((PrivilegedAction<Integer>) () -> {
-            int fastopen = 0;
-            File file = new File("/proc/sys/net/ipv4/tcp_fastopen");
-            if (file.exists()) {
-                BufferedReader in = null;
-                try {
-                    in = new BufferedReader(new FileReader(file));
-                    fastopen = Integer.parseInt(in.readLine());
-                    if (logger.isDebugEnabled()) {
-                        logger.debug("{}: {}", file, fastopen);
-                    }
-                } catch (Exception e) {
-                    logger.debug("Failed to get TCP_FASTOPEN from: {}", file, e);
-                } finally {
-                    if (in != null) {
-                        try {
-                            in.close();
-                        } catch (Exception e) {
-                            // Ignored.
-                        }
-                    }
-                }
-            } else {
-                if (logger.isDebugEnabled()) {
-                    logger.debug("{}: {} (non-existent)", file, fastopen);
-                }
-            }
-            return fastopen;
-        }) == 3;
     }
 
     public static DomainSocketAddress newSocketAddress() {

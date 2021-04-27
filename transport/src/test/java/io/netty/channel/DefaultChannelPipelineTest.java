@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -164,6 +164,42 @@ public class DefaultChannelPipelineTest {
 
     private static LocalChannel newLocalChannel() {
         return new LocalChannel(group.next());
+    }
+
+    @Test
+    public void testAddLastVarArgsSkipsNull() {
+        ChannelPipeline pipeline = newLocalChannel().pipeline();
+
+        pipeline.addLast(null, newHandler(), null);
+        assertEquals(1, pipeline.names().size());
+        assertEquals("DefaultChannelPipelineTest$TestHandler#0", pipeline.names().get(0));
+
+        pipeline.addLast(newHandler(), null, newHandler());
+        assertEquals(3, pipeline.names().size());
+        assertEquals("DefaultChannelPipelineTest$TestHandler#0", pipeline.names().get(0));
+        assertEquals("DefaultChannelPipelineTest$TestHandler#1", pipeline.names().get(1));
+        assertEquals("DefaultChannelPipelineTest$TestHandler#2", pipeline.names().get(2));
+
+        pipeline.addLast((ChannelHandler) null);
+        assertEquals(3, pipeline.names().size());
+    }
+
+    @Test
+    public void testAddFirstVarArgsSkipsNull() {
+        ChannelPipeline pipeline = newLocalChannel().pipeline();
+
+        pipeline.addFirst(null, newHandler(), null);
+        assertEquals(1, pipeline.names().size());
+        assertEquals("DefaultChannelPipelineTest$TestHandler#0", pipeline.names().get(0));
+
+        pipeline.addFirst(newHandler(), null, newHandler());
+        assertEquals(3, pipeline.names().size());
+        assertEquals("DefaultChannelPipelineTest$TestHandler#2", pipeline.names().get(0));
+        assertEquals("DefaultChannelPipelineTest$TestHandler#1", pipeline.names().get(1));
+        assertEquals("DefaultChannelPipelineTest$TestHandler#0", pipeline.names().get(2));
+
+        pipeline.addFirst((ChannelHandler) null);
+        assertEquals(3, pipeline.names().size());
     }
 
     @Test

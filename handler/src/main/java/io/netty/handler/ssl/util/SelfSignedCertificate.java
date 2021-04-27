@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -20,8 +20,8 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.handler.codec.base64.Base64;
 import io.netty.util.CharsetUtil;
+import io.netty.util.internal.PlatformDependent;
 import io.netty.util.internal.SystemPropertyUtil;
-import io.netty.util.internal.ThrowableUtil;
 import io.netty.util.internal.logging.InternalLogger;
 import io.netty.util.internal.logging.InternalLoggerFactory;
 
@@ -30,6 +30,7 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.file.Files;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
@@ -53,8 +54,8 @@ import java.util.Date;
  * {@link java.io.File#createTempFile(String, String)}, and they are deleted when the JVM exits using
  * {@link java.io.File#deleteOnExit()}.
  * </p><p>
- * At first, this method tries to use OpenJDK's X.509 implementation (the {@code sun.security.x509} package).
- * If it fails, it tries to use <a href="http://www.bouncycastle.org/">Bouncy Castle</a> as a fallback.
+ * The certificate is generated using <a href="https://www.bouncycastle.org/">Bouncy Castle</a>, which is an
+ * <em>optional</em> dependency of Netty.
  * </p>
  */
 public final class SelfSignedCertificate {
@@ -235,22 +236,13 @@ public final class SelfSignedCertificate {
 
         String[] paths;
         try {
-            // Try the OpenJDK's proprietary implementation.
-            paths = OpenJdkSelfSignedCertGenerator.generate(fqdn, keypair, random, notBefore, notAfter, algorithm);
-        } catch (Throwable t) {
-            logger.debug("Failed to generate a self-signed X.509 certificate using sun.security.x509:", t);
-            try {
-                // Try Bouncy Castle if the current JVM didn't have sun.security.x509.
-                paths = BouncyCastleSelfSignedCertGenerator.generate(
-                        fqdn, keypair, random, notBefore, notAfter, algorithm);
-            } catch (Throwable t2) {
-                logger.debug("Failed to generate a self-signed X.509 certificate using Bouncy Castle:", t2);
-                final CertificateException certificateException = new CertificateException(
-                        "No provider succeeded to generate a self-signed certificate. " +
-                                "See debug log for the root cause.", t2);
-                ThrowableUtil.addSuppressed(certificateException, t);
-                throw certificateException;
-            }
+            paths = BouncyCastleSelfSignedCertGenerator.generate(
+                    fqdn, keypair, random, notBefore, notAfter, algorithm);
+        } catch (Throwable throwable) {
+            logger.debug("Failed to generate a self-signed X.509 certificate using Bouncy Castle:", throwable);
+            throw new CertificateException(
+                    "No provider succeeded to generate a self-signed certificate. " +
+                    "See debug log for the root cause.", throwable);
         }
 
         certificate = new File(paths[0]);
@@ -330,7 +322,7 @@ public final class SelfSignedCertificate {
             wrappedBuf.release();
         }
 
-        File keyFile = File.createTempFile("keyutil_" + fqdn + '_', ".key");
+        File keyFile = PlatformDependent.createTempFile("keyutil_" + fqdn + '_', ".key", null);
         keyFile.deleteOnExit();
 
         OutputStream keyOut = new FileOutputStream(keyFile);
@@ -361,7 +353,7 @@ public final class SelfSignedCertificate {
             wrappedBuf.release();
         }
 
-        File certFile = File.createTempFile("keyutil_" + fqdn + '_', ".crt");
+        File certFile = PlatformDependent.createTempFile("keyutil_" + fqdn + '_', ".crt", null);
         certFile.deleteOnExit();
 
         OutputStream certOut = new FileOutputStream(certFile);

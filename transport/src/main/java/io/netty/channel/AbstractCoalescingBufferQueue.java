@@ -5,7 +5,7 @@
  * "License"); you may not use this file except in compliance with the License. You may obtain a
  * copy of the License at:
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ * https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software distributed under the License
  * is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
@@ -14,6 +14,7 @@
  */
 package io.netty.channel;
 
+import io.netty.buffer.ByteBufConvertible;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.CompositeByteBuf;
@@ -25,7 +26,6 @@ import java.util.ArrayDeque;
 
 import static io.netty.util.ReferenceCountUtil.safeRelease;
 import static io.netty.util.internal.ObjectUtil.checkPositiveOrZero;
-import static io.netty.util.internal.PlatformDependent.throwException;
 import static java.util.Objects.requireNonNull;
 
 @UnstableApi
@@ -110,8 +110,8 @@ public abstract class AbstractCoalescingBufferQueue {
         if (entry == null) {
             return null;
         }
-        assert entry instanceof ByteBuf;
-        ByteBuf result = (ByteBuf) entry;
+        assert entry instanceof ByteBufConvertible;
+        ByteBuf result = ((ByteBufConvertible) entry).asByteBuf();
 
         decrementReadableBytes(result.readableBytes());
 
@@ -181,7 +181,7 @@ public abstract class AbstractCoalescingBufferQueue {
             safeRelease(entryBuffer);
             safeRelease(toReturn);
             aggregatePromise.setFailure(cause);
-            throwException(cause);
+            throw cause;
         }
         decrementReadableBytes(originalBytes - bytes);
         return toReturn;
@@ -235,12 +235,12 @@ public abstract class AbstractCoalescingBufferQueue {
                     break;
                 }
 
-                if (entry instanceof ByteBuf) {
+                if (entry instanceof ByteBufConvertible) {
                     if (previousBuf != null) {
                         decrementReadableBytes(previousBuf.readableBytes());
                         ctx.write(previousBuf, ctx.voidPromise());
                     }
-                    previousBuf = (ByteBuf) entry;
+                    previousBuf = ((ByteBufConvertible) entry).asByteBuf();
                 } else if (entry instanceof ChannelPromise) {
                     decrementReadableBytes(previousBuf.readableBytes());
                     ctx.write(previousBuf, (ChannelPromise) entry);
@@ -263,6 +263,11 @@ public abstract class AbstractCoalescingBufferQueue {
         }
     }
 
+    @Override
+    public String toString() {
+        return "bytes: " + readableBytes + " buffers: " + (size() >> 1);
+    }
+
     /**
      * Calculate the result of {@code current + next}.
      */
@@ -281,7 +286,7 @@ public abstract class AbstractCoalescingBufferQueue {
         } catch (Throwable cause) {
             composite.release();
             safeRelease(next);
-            throwException(cause);
+            throw cause;
         }
         return composite;
     }
@@ -300,7 +305,7 @@ public abstract class AbstractCoalescingBufferQueue {
         } catch (Throwable cause) {
             newCumulation.release();
             safeRelease(next);
-            throwException(cause);
+            throw cause;
         }
         cumulation.release();
         next.release();
@@ -337,8 +342,8 @@ public abstract class AbstractCoalescingBufferQueue {
                 break;
             }
             try {
-                if (entry instanceof ByteBuf) {
-                    ByteBuf buffer = (ByteBuf) entry;
+                if (entry instanceof ByteBufConvertible) {
+                    ByteBuf buffer = ((ByteBufConvertible) entry).asByteBuf();
                     decrementReadableBytes(buffer.readableBytes());
                     safeRelease(buffer);
                 } else {
