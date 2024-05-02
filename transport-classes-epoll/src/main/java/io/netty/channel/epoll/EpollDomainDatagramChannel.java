@@ -297,12 +297,10 @@ public final class EpollDomainDatagramChannel extends AbstractEpollChannel imple
                 return;
             }
             final EpollRecvByteAllocatorHandle allocHandle = recvBufAllocHandle();
-            allocHandle.edgeTriggered(isFlagSet(Native.EPOLLET));
 
             final ChannelPipeline pipeline = pipeline();
             final ByteBufAllocator allocator = config.getAllocator();
             allocHandle.reset(config);
-            epollInBefore();
 
             Throwable exception = null;
             try {

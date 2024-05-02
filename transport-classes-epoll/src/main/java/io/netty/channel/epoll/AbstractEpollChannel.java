@@ -102,14 +102,6 @@ abstract class AbstractEpollChannel extends AbstractChannel implements UnixChann
         this.ops = initialOps;
     }
 
-    void add(EpollIoOps add) {
-        ops = ops.with(add);
-    }
-
-    void remove(EpollIoOps remove) {
-        ops = ops.without(remove);
-    }
-
     static boolean isSoErrorZero(Socket fd) {
         try {
             return fd.getSoError() == 0;
@@ -149,10 +141,6 @@ abstract class AbstractEpollChannel extends AbstractChannel implements UnixChann
     protected final EpollIoRegistration registration() {
         assert registration != null;
         return registration;
-    }
-
-    boolean isFlagSet(int flag) {
-        return (ops.value & flag) != 0;
     }
 
     @Override
@@ -257,12 +245,6 @@ abstract class AbstractEpollChannel extends AbstractChannel implements UnixChann
         // executeEpollInReadyRunnable could read nothing, and if the user doesn't explicitly call read they will
         // never get data after this.
         setFlag(Native.EPOLLIN);
-
-        // If EPOLL ET mode is enabled and auto read was toggled off on the last read loop then we may not be notified
-        // again if we didn't consume all the data. So we force a read operation here if there maybe more data.
-        if (unsafe.maybeMoreDataToRead) {
-            unsafe.executeEpollInReadyRunnable(config());
-        }
     }
 
     final boolean shouldBreakEpollInReady(ChannelConfig config) {
@@ -450,13 +432,6 @@ abstract class AbstractEpollChannel extends AbstractChannel implements UnixChann
         boolean readPending;
         boolean maybeMoreDataToRead;
         private EpollRecvByteAllocatorHandle allocHandle;
-        private final Runnable epollInReadyRunnable = new Runnable() {
-            @Override
-            public void run() {
-                epollInReadyRunnablePending = false;
-                epollInReady();
-            }
-        };
 
         Channel channel() {
             return AbstractEpollChannel.this;
@@ -518,23 +493,8 @@ abstract class AbstractEpollChannel extends AbstractChannel implements UnixChann
          */
         abstract void epollInReady();
 
-        final void epollInBefore() {
-            maybeMoreDataToRead = false;
-        }
-
         final void epollInFinally(ChannelConfig config) {
-            maybeMoreDataToRead = allocHandle.maybeMoreDataToRead();
-
-            if (allocHandle.isReceivedRdHup() || (readPending && maybeMoreDataToRead)) {
-                // trigger a read again as there may be something left to read and because of epoll ET we
-                // will not get notified again until we read everything from the socket
-                //
-                // It is possible the last fireChannelRead call could cause the user to call read() again, or if
-                // autoRead is true the call to channelReadComplete would also call read, but maybeMoreDataToRead is set
-                // to false before every read operation to prevent re-entry into epollInReady() we will not read from
-                // the underlying OS again unless the user happens to call read again.
-                executeEpollInReadyRunnable(config);
-            } else if (!readPending && !config.isAutoRead()) {
+            if (!readPending && !config.isAutoRead() && !allocHandle.isReceivedRdHup()) {
                 // Check if there is a readPending which was not processed yet.
                 // This could be for two reasons:
                 // * The user called Channel.read() or ChannelHandlerContext.read() in channelRead(...) method
@@ -543,14 +503,6 @@ abstract class AbstractEpollChannel extends AbstractChannel implements UnixChann
                 // See https://github.com/netty/netty/issues/2254
                 clearEpollIn();
             }
-        }
-
-        final void executeEpollInReadyRunnable(ChannelConfig config) {
-            if (epollInReadyRunnablePending || !isActive() || shouldBreakEpollInReady(config)) {
-                return;
-            }
-            epollInReadyRunnablePending = true;
-            eventLoop().execute(epollInReadyRunnable);
         }
 
         /**
@@ -640,7 +592,7 @@ abstract class AbstractEpollChannel extends AbstractChannel implements UnixChann
             // Flush immediately only when there's no pending flush.
             // If there's a pending flush operation, event loop will call forceFlush() later,
             // and thus there's no need to call it now.
-            if (!isFlagSet(Native.EPOLLOUT)) {
+            if (!ops.contains(EpollIoOps.EPOLLOUT)) {
                 super.flush0();
             }
         }
